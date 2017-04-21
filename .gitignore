@@ -1,0 +1,54 @@
+*.py[cod]
+*$py.class
+__pycache__
+.Python
+.ipynb_checkpoints
+.idea
+.im
+*.p
+*.gz
+*.hdr
+*.roi
+*.nrrd
+RawData
+Output
+models
+BadLog
+bld
+
+## Core latex/pdflatex auxiliary files:
+*.aux
+*.lof
+*.log
+*.lot
+*.fls
+*.out
+*.toc
+*.fmt
+*.fot
+*.cb
+*.cb2
+
+## Intermediate documents:
+*.dvi
+*-converted-to.*
+
+## Generated if empty string is given at "Please type another file name for output:"
+.pdf
+
+## Bibliography auxiliary files (bibtex/biblatex/biber):
+*.bbl
+*.bcf
+*.blg
+*-blx.aux
+*-blx.bib
+*.brf
+*.run.xml
+
+## Build tool auxiliary files:
+*.fdb_latexmk
+*.synctex
+*.synctex(busy)
+*.synctex.gz
+*.synctex.gz(busy)
+*.pdfsync
