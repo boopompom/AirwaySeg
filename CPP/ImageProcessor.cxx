@@ -9,14 +9,27 @@ mutex ImageProcessor::mJSONMutex;
 
 void ImageProcessor::process() {
 
+	IntensityImageType::Pointer images[4] = {
+		mIntensityImage,
+		mChannels[0],
+		mChannels[1],
+		mChannels[2],
+	};
     IntensityImageType::SizeType imageSize = mIntensityImage->GetLargestPossibleRegion().GetSize();
     IntensityImageType::IndexType start;
     IntensityImageType::SizeType size;
     unsigned int offset = (mDiameter-1)/2;
 
-    unsigned int shape_X[] = {mVOICount, mDiameter, mDiameter, mDiameter};
+	unsigned int channels = 1;
+	unsigned int shape_X_size = 5;
+	unsigned int shape_X_wChannels[]  = { mVOICount, channels, mDiameter, mDiameter, mDiameter };
+	unsigned int shape_X_woChannels[] = { mVOICount, mDiameter, mDiameter, mDiameter };
+	if (channels == 1) {
+		shape_X_size = 4;
+	}
+
     unsigned int shape_Y[] = {mVOICount, mLabelCount};
-    float* data_X = new float[mVOICount * mDiameter * mDiameter * mDiameter];
+    float* data_X = new float[mVOICount * channels * mDiameter * mDiameter * mDiameter];
     int* data_Y = new int[mVOICount * mLabelCount];
 
     unsigned long offset_X = 0;
@@ -34,7 +47,6 @@ void ImageProcessor::process() {
 
         for(int i=0;i<mVOIPerLabel; i++) {
 
-            VOIFilterType::Pointer filter = VOIFilterType::New();
 
             auto idxIt = idxList.begin();
             int off = int(idxList.size() * (double)std::rand() / RAND_MAX);
@@ -50,7 +62,7 @@ void ImageProcessor::process() {
             size[1] = mDiameter;
             size[2] = mDiameter;
 
-            cout
+            std::cout
                 << "VOI Center: "
                 << idx[0] << ", "
                 << idx[1] << ", "
@@ -61,31 +73,30 @@ void ImageProcessor::process() {
                 << mIntensityImage->GetPixel(idx) << " | "
                 << mLabelImage->GetPixel(idx) << endl;
 
-            filter->SetInput(mIntensityImage);
-            filter->SetRegionOfInterest(IntensityImageType::RegionType(start, size));
-            try {
-                filter->Update();
-            } catch(ExceptionObject e) {
-                //FIXME: Possibility of infinite loop
-                i--;
-                continue;
-            }
+			for (int i = 0; i < channels; i++) {
+				VOIFilterType::Pointer filter = VOIFilterType::New();
+				filter = VOIFilterType::New();
+				filter->SetInput(images[i]);
+				filter->SetRegionOfInterest(IntensityImageType::RegionType(start, size));
+				filter->Update();
 
-            IntensityImageType::Pointer VOI = filter->GetOutput();
-            ImgRegionIteratorType imIterator(VOI, VOI->GetLargestPossibleRegion());
+				IntensityImageType::Pointer VOI = filter->GetOutput();
+				ImgRegionIteratorType imIterator(VOI, VOI->GetLargestPossibleRegion());
 
+				unsigned int counter = 0;
+				for (imIterator.GoToBegin(); !imIterator.IsAtEnd(); ++imIterator) {
+					data_X[(mDiameter * mDiameter * mDiameter * i) + offset_X + counter] = imIterator.Get();
+					++counter;
+				}
 
-            unsigned int counter = 0;
-            for(imIterator.GoToBegin(); !imIterator.IsAtEnd(); ++imIterator) {
-                data_X[offset_X + counter] = imIterator.Get();
-                ++counter;
-            }
+			}
+
 
             for(int j=0;j<mLabelCount;j++) {
                 data_Y[offset_Y + j] = mEnabledLabelOneHot[label][j];
             }
 
-            offset_X += mDiameter * mDiameter * mDiameter;
+            offset_X += mDiameter * mDiameter * mDiameter * channels;
             offset_Y += mLabelCount;
         }
         labelCounter++;
@@ -93,7 +104,7 @@ void ImageProcessor::process() {
     }
 
 
-    cnpy::npz_save(mOutputPath + "/" + mItemName + "_X.npz", mItemName, data_X, shape_X , 4, "w");
+    cnpy::npz_save(mOutputPath + "/" + mItemName + "_X.npz", mItemName, data_X, channels==1?shape_X_woChannels: shape_X_wChannels, shape_X_size, "w");
     cnpy::npz_save(mOutputPath + "/" + mItemName + "_Y.npz", mItemName, data_Y, shape_Y , 2, "w");
 
     delete data_X;
@@ -127,32 +138,129 @@ void ImageProcessor::process() {
 
 
 }
-
 void ImageProcessor::loadLabelMap() {
 
-    string intensityFilename = mInputPath + "/image.nrrd";
-    IntensityReaderType::Pointer readerIntensity = IntensityReaderType::New();
-    readerIntensity->SetFileName(intensityFilename);
+	SubtractLabelFilterType::Pointer subtractFilter = SubtractLabelFilterType::New();
+	AddLabelFilterType::Pointer addFilter = AddLabelFilterType::New();
+
+	//Read Labels
+	string airwayLabelFilename = mInputPath + "/ZUNU_vida-aircolor.img.gz";
+	string lungLabelFilename = mInputPath + "/ZUNU_vida-lung.img.gz";
+
+	LabelReaderType::Pointer airwayReader = LabelReaderType::New();
+	LabelReaderType::Pointer lungReader = LabelReaderType::New();
+
+	airwayReader->SetFileName(airwayLabelFilename);
+	airwayReader->Update();
+	LabelImageType::Pointer airwayImage = airwayReader->GetOutput();
+
+	lungReader->SetFileName(lungLabelFilename);
+	lungReader->Update();
+	LabelImageType::Pointer lungImage = lungReader->GetOutput();
+
+	LblEditIteratorType it;
+
+	it = LblEditIteratorType(lungImage, lungImage->GetLargestPossibleRegion());
+	for (it.GoToBegin(); !it.IsAtEnd(); ++it) {
+		LabelPixelType label = it.Get();
+		if (label == 30 || label == 20) {
+			it.Set(1);
+		}
+	}
+	subtractFilter->SetInput1(lungImage);
+	subtractFilter->SetInput2(airwayImage);
+	subtractFilter->Update();
+	lungImage = subtractFilter->GetOutput();
+
+	it = LblEditIteratorType(lungImage, lungImage->GetLargestPossibleRegion());
+	for (it.GoToBegin(); !it.IsAtEnd(); ++it) {
+		LabelPixelType label = it.Get();
+		if (label > 0) {
+			it.Set(500);
+		} else {
+			it.Set(0);
+		}
+	}
+
+	addFilter->SetInput1(lungImage);
+	addFilter->SetInput2(airwayImage);
+	addFilter->Update();
+	mLabelImage = addFilter->GetOutput();
+
+	//LabelWriterType::Pointer writerLabels = LabelWriterType::New();
+	//writerLabels->SetFileName("C:/Projects/AirwaySegmentation/Output/test.nrrd");
+	//writerLabels->SetInput(mLabelImage);
+	//writerLabels->Update();
+
+}
+void ImageProcessor::init() {
+
+	typedef GDCMImageIO          ImageIOType;
+	typedef GDCMSeriesFileNames  NamesGeneratorType;
+
+	//Read DICOM
+	string intensityDirname = mInputPath + "/dicom/";
+	ImageIOType::Pointer gdcmIO = ImageIOType::New();
+	NamesGeneratorType::Pointer namesGenerator = NamesGeneratorType::New();
+	IntensityReaderType::Pointer readerIntensity = IntensityReaderType::New();
+	namesGenerator->SetInputDirectory(intensityDirname);
+	readerIntensity->SetImageIO(gdcmIO);
+	readerIntensity->SetFileNames(namesGenerator->GetInputFileNames());
     readerIntensity->Update();
 
-    string labelFilename = mInputPath + "/label.nrrd";
-    LabelReaderType::Pointer readerLabels = LabelReaderType::New();
-    readerLabels->SetFileName(labelFilename);
-    readerLabels->Update();
+	mIntensityImage = readerIntensity->GetOutput();
 
-    mIntensityImage= readerIntensity->GetOutput();
-    mLabelImage= readerLabels->GetOutput();
+	/*
+	GaussianFilterType::Pointer gaussianFilter = GaussianFilterType::New();
+	gaussianFilter->SetInput(mIntensityImage);
+	gaussianFilter->SetVariance(5.0);
 
+	DerivativeFilterType::Pointer xDerivativeFilter = DerivativeFilterType::New();
+	DerivativeFilterType::Pointer yDerivativeFilter = DerivativeFilterType::New();
+	DerivativeFilterType::Pointer zDerivativeFilter = DerivativeFilterType::New();
+
+	xDerivativeFilter->SetDirection(0);
+	yDerivativeFilter->SetDirection(1);
+	zDerivativeFilter->SetDirection(2);
+
+	xDerivativeFilter->SetInput(gaussianFilter->GetOutput());
+	yDerivativeFilter->SetInput(gaussianFilter->GetOutput());
+	zDerivativeFilter->SetInput(gaussianFilter->GetOutput());
+
+	xDerivativeFilter->Update();
+	yDerivativeFilter->Update();
+	zDerivativeFilter->Update();
+
+	mChannels[0] = xDerivativeFilter->GetOutput();
+	mChannels[1] = yDerivativeFilter->GetOutput();
+	mChannels[2] = zDerivativeFilter->GetOutput();
+	*/
+
+	loadLabelMap();
+
+    
     LabelImageType::SizeType dim = mLabelImage->GetLargestPossibleRegion().GetSize();
 
     IntensityIndexType intensityIdx = IntensityIndexType();
 
-    LblRegionIteratorType it(mLabelImage, mLabelImage->GetLargestPossibleRegion());
+	long loadedVOIs = 0;
+	LblRegionIteratorType it(mLabelImage, mLabelImage->GetLargestPossibleRegion());
     for(it.GoToBegin(); !it.IsAtEnd(); ++it) {
+
         LabelPixelType label = it.Get();
-        if(label == 0 || mEnabledLabelsLookup.find(label) == mEnabledLabelsLookup.end()) {
-            continue;
+
+		if (loadedVOIs >= mVOICount * 5) {
+			break;
+		}
+
+		//Discard label if it is not in the enabled list or if we already sampled 5 times the VOI per label number
+		if(label == 0 || mEnabledLabelsLookup.find(label) == mEnabledLabelsLookup.end() || mLabelMap[label].size() > mVOIPerLabel * 5) {
+			continue;
         }
         mLabelMap[label].push_back(it.GetIndex());
+		++loadedVOIs;
+
     }
+
+	cout << "Done" << endl;
 }

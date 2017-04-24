@@ -3,6 +3,7 @@
 
 #define RAND_SEED 4324342
 
+#include <mutex>
 #include <vector>
 #include <map>
 #include <memory>
@@ -10,9 +11,21 @@
 
 #include <itkImage.h>
 #include <itkImageFileReader.h>
+#include <itkImageFileWriter.h>
+#include <itkImageSeriesReader.h>
+
+
 #include <itkRegionOfInterestImageFilter.h>
 #include <itkImageRegionConstIterator.h>
-#include <mutex>
+#include <itkImageRandomConstIteratorWithIndex.h>
+#include <itkGDCMImageIO.h>
+#include <itkGDCMSeriesFileNames.h>
+#include <itkChangeLabelImageFilter.h>
+#include <itkSubtractImageFilter.h>
+#include <itkAddImageFilter.h>
+#include <itkDiscreteGaussianImageFilter.h>
+#include <itkDerivativeImageFilter.h>
+
 
 #include "cnpy.h"
 
@@ -29,21 +42,30 @@ struct DICOMJob {
 };
 
 typedef float IntensityPixelType;
-typedef unsigned int LabelPixelType;
+typedef int LabelPixelType;
 
 typedef Image<IntensityPixelType, 3>  IntensityImageType;
-typedef ImageFileReader<IntensityImageType> IntensityReaderType;
+typedef ImageSeriesReader<IntensityImageType> IntensityReaderType;
 typedef IntensityImageType::IndexType IntensityIndexType;
 
 typedef Image<LabelPixelType, 3>  LabelImageType;
 typedef ImageFileReader<LabelImageType> LabelReaderType;
+typedef ImageFileWriter<LabelImageType> LabelWriterType;
 typedef LabelImageType::IndexType LabelIndexType;
 
 typedef map<unsigned int, vector<IntensityIndexType> > LabelMapType;
 typedef shared_ptr<LabelMapType> LabelMapPtrType;
 
 typedef RegionOfInterestImageFilter< IntensityImageType, IntensityImageType > VOIFilterType;
+typedef ChangeLabelImageFilter< LabelImageType, LabelImageType > ChangeLabelFilterType;
+typedef SubtractImageFilter< LabelImageType, LabelImageType > SubtractLabelFilterType;
+typedef AddImageFilter< LabelImageType, LabelImageType > AddLabelFilterType;
+typedef DerivativeImageFilter<IntensityImageType, IntensityImageType> DerivativeFilterType;
+typedef DiscreteGaussianImageFilter<IntensityImageType, IntensityImageType> GaussianFilterType;
+
+
 typedef ImageRegionConstIterator< LabelImageType > LblRegionIteratorType;
+typedef ImageRegionIterator< LabelImageType > LblEditIteratorType;
 typedef ImageRegionConstIterator< IntensityImageType > ImgRegionIteratorType;
 
 
@@ -81,7 +103,7 @@ public:
         mVOICount = mLabelCount * mVOIPerLabel;
 
 
-        loadLabelMap();
+        init();
     }
 
     void process();
@@ -89,6 +111,12 @@ public:
 private:
 
     string processPath(string path) {
+		for (auto it = path.begin(); it != path.end(); ++it) {
+			char x = *it;
+			if (x == '\\') {
+				*it = '/';
+			}
+		}
         std::size_t found = path.rfind("/");
         if(found == string::npos) {
             throw ExceptionObject("Invalid Path");
@@ -102,6 +130,7 @@ private:
     }
 
     void loadLabelMap();
+	void init();
 
     static bool mIsJSONMapWritten;
     static mutex mJSONMutex;
@@ -116,9 +145,11 @@ private:
 
     LabelMapType mLabelMap;
 
-    IntensityImageType::Pointer mIntensityImage;
-    LabelImageType::Pointer mLabelImage;
+	IntensityImageType::Pointer mIntensityImage;
+	IntensityImageType::Pointer mChannels[3];
+	LabelImageType::Pointer mLabelImage;
 
+	
     map<unsigned int, bool> mEnabledLabelsLookup;
     vector<unsigned int> mEnabledLabelsList;
     map<unsigned int, vector<unsigned int>> mEnabledLabelOneHot;

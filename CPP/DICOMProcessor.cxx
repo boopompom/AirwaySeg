@@ -48,8 +48,9 @@ int main(int argc, char* argv[]) {
         cerr << "You need at least one label" << endl;
         return 1;
     }
-    enabledLabels.push_back(0);
-    for(option::Option* opt = options[LABEL_LIST]; opt; opt = opt->next()) {
+	//enabledLabels.push_back(0);
+	enabledLabels.push_back(500);
+	for(option::Option* opt = options[LABEL_LIST]; opt; opt = opt->next()) {
         enabledLabels.push_back((unsigned int)stoi(opt->arg));
     }
 
