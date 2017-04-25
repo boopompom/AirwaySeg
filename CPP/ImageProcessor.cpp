@@ -7,6 +7,24 @@ using namespace itk;
 bool ImageProcessor::mIsJSONMapWritten = false;
 mutex ImageProcessor::mJSONMutex;
 
+void ImageProcessor::genReplacementLabelMap() {
+
+	string xmlPath = mInputPath + string("/ZUNU_vida-xmlTree.xml");
+	TiXmlDocument doc( xmlPath.c_str() );
+	doc.LoadFile();
+
+	TiXmlElement* root = doc.FirstChildElement("TreeFile");
+	TiXmlElement* segNames = root->FirstChildElement("SegmentNames");
+
+	for (TiXmlElement* e = segNames->FirstChildElement("SegmentName"); e != NULL; e = e->NextSiblingElement("SegmentName")) {
+		string segName = e->Attribute("anatomicalName");
+		unsigned int segLabel = (unsigned int)stoi(e->Attribute("linkIds"));
+		mRepLabelMap[segName] = segLabel;
+		mRevRepLabelMap[segLabel] = segName;
+	}
+	std::cout << "Done Rep Map" << endl;
+}
+
 void ImageProcessor::process() {
 
 	IntensityImageType::Pointer images[4] = {
@@ -18,8 +36,7 @@ void ImageProcessor::process() {
     IntensityImageType::SizeType imageSize = mIntensityImage->GetLargestPossibleRegion().GetSize();
     IntensityImageType::IndexType start;
     IntensityImageType::SizeType size;
-    unsigned int offset = (mDiameter-1)/2;
-
+    
 	unsigned int channels = 1;
 	unsigned int shape_X_size = 5;
 	unsigned int shape_X_wChannels[]  = { mVOICount, channels, mDiameter, mDiameter, mDiameter };
@@ -41,27 +58,30 @@ void ImageProcessor::process() {
         unsigned int label = *labelIt;
 
         vector<IntensityIndexType> idxList = mLabelMap[label];
-        if(idxList.size() < mVOIPerLabel) {
-            throw ExceptionObject("Insufficient VOIs for label");
+        
+		unsigned int labelsToLookFor = min<unsigned int>(idxList.size(), mVOIPerLabel);
+		if(idxList.size() < mVOIPerLabel) {
+			std::cerr << "Insufficient VOIs for label " << label << " in path " << mInputPath << endl;
         }
 
-        for(int i=0;i<mVOIPerLabel; i++) {
+		for (int i = 0; i < labelsToLookFor; i++) {
 
 
-            auto idxIt = idxList.begin();
-            int off = int(idxList.size() * (double)std::rand() / RAND_MAX);
-            std::advance(idxIt, off);
+			auto idxIt = idxList.begin();
+			int off = int(idxList.size() * (double)std::rand() / RAND_MAX);
+			std::advance(idxIt, off);
 
-            auto idx = *idxIt;
-            start = idx;
-            start[0] -= offset;
-            start[1] -= offset;
-            start[2] -= offset;
+			auto idx = *idxIt;
+			start = idx;
+			start[0] -= mOffsetFromCenter;
+			start[1] -= mOffsetFromCenter;
+			start[2] -= mOffsetFromCenter;
 
             size[0] = mDiameter;
             size[1] = mDiameter;
             size[2] = mDiameter;
 
+			/*
             std::cout
                 << "VOI Center: "
                 << idx[0] << ", "
@@ -72,7 +92,7 @@ void ImageProcessor::process() {
                 << idx[2] << " | "
                 << mIntensityImage->GetPixel(idx) << " | "
                 << mLabelImage->GetPixel(idx) << endl;
-
+			*/
 			for (int i = 0; i < channels; i++) {
 				VOIFilterType::Pointer filter = VOIFilterType::New();
 				filter = VOIFilterType::New();
@@ -140,6 +160,8 @@ void ImageProcessor::process() {
 }
 void ImageProcessor::loadLabelMap() {
 
+	genReplacementLabelMap();
+
 	SubtractLabelFilterType::Pointer subtractFilter = SubtractLabelFilterType::New();
 	AddLabelFilterType::Pointer addFilter = AddLabelFilterType::New();
 
@@ -160,6 +182,17 @@ void ImageProcessor::loadLabelMap() {
 
 	LblEditIteratorType it;
 
+	it = LblEditIteratorType(airwayImage, airwayImage->GetLargestPossibleRegion());
+	for (it.GoToBegin(); !it.IsAtEnd(); ++it) {
+		LabelPixelType label = it.Get();
+		if (label == 0) {
+			continue;
+		}
+		string segName = mRevRepLabelMap[label];
+		LabelPixelType newLabel = mReferenceLabelMap[segName];
+		it.Set(newLabel);
+	}
+
 	it = LblEditIteratorType(lungImage, lungImage->GetLargestPossibleRegion());
 	for (it.GoToBegin(); !it.IsAtEnd(); ++it) {
 		LabelPixelType label = it.Get();
@@ -167,6 +200,7 @@ void ImageProcessor::loadLabelMap() {
 			it.Set(1);
 		}
 	}
+
 	subtractFilter->SetInput1(lungImage);
 	subtractFilter->SetInput2(airwayImage);
 	subtractFilter->Update();
@@ -245,19 +279,25 @@ void ImageProcessor::init() {
 
 	long loadedVOIs = 0;
 	LblRegionIteratorType it(mLabelImage, mLabelImage->GetLargestPossibleRegion());
+	//it.SetNumberOfSamples(mVOICount * 5);
     for(it.GoToBegin(); !it.IsAtEnd(); ++it) {
 
         LabelPixelType label = it.Get();
-
-		if (loadedVOIs >= mVOICount * 5) {
-			break;
+		LabelIndexType idx = it.GetIndex();
+		
+		if (idx[0] < mOffsetFromCenter || idx[1] < mOffsetFromCenter || idx[2] < mOffsetFromCenter) {
+			continue;
 		}
 
-		//Discard label if it is not in the enabled list or if we already sampled 5 times the VOI per label number
-		if(label == 0 || mEnabledLabelsLookup.find(label) == mEnabledLabelsLookup.end() || mLabelMap[label].size() > mVOIPerLabel * 5) {
+		if (label == 500 && mLabelMap[500].size() > mVOICount * 3) {
+			continue;
+		}
+
+		if(label == 0 || mEnabledLabelsLookup.find(label) == mEnabledLabelsLookup.end()) {
 			continue;
         }
-        mLabelMap[label].push_back(it.GetIndex());
+        
+		mLabelMap[label].push_back(idx);
 		++loadedVOIs;
 
     }

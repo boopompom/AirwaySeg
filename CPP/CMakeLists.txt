@@ -10,5 +10,29 @@ include(${ITK_USE_FILE})
 find_package( ZLIB REQUIRED )
 include_directories( ${ZLIB_INCLUDE_DIRS} )
 
-add_executable(DICOMProcessor DICOMProcessor.cxx cnpy.cxx cnpy.h ImageProcessor.cxx ImageProcessor.h CommandLineProcessor.h optionparser.h ThreadedQueue.cpp ThreadedQueue.h)
+add_executable(DICOMProcessor 
+	CommandLineProcessor.h
+	optionparser.h
+
+	DICOMProcessor.cpp
+
+	cnpy.h
+	cnpy.cpp
+
+	ImageProcessor.h
+	ImageProcessor.cpp
+
+	ThreadedQueue.h
+	ThreadedQueue.cpp 
+
+	tinyxml/tinystr.h
+	tinyxml/tinystr.cpp 
+
+	tinyxml/tinyxml.h
+	tinyxml/tinyxml.cpp 
+
+	tinyxml/tinyxmlerror.cpp
+	tinyxml/tinyxmlparser.cpp 
+)
+					
 target_link_libraries(DICOMProcessor ${ITK_LIBRARIES} ${ZLIB_LIBRARIES})

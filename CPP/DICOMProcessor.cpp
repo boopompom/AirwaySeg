@@ -87,7 +87,7 @@ int main(int argc, char* argv[]) {
         threadCount = (unsigned int)std::stoi(options[THREAD_COUNT].first()->arg);
     }
 
-    unsigned int voiPerLabel = 150;
+    unsigned int voiPerLabel = 50;
     if(options[VOI_PER_LABEL]) {
         voiPerLabel = (unsigned int)std::stoi(options[VOI_PER_LABEL].first()->arg);
     }

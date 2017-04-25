@@ -14,6 +14,7 @@
 #include <itkImageFileWriter.h>
 #include <itkImageSeriesReader.h>
 
+#include "tinyxml/tinyxml.h"
 
 #include <itkRegionOfInterestImageFilter.h>
 #include <itkImageRegionConstIterator.h>
@@ -65,6 +66,7 @@ typedef DiscreteGaussianImageFilter<IntensityImageType, IntensityImageType> Gaus
 
 
 typedef ImageRegionConstIterator< LabelImageType > LblRegionIteratorType;
+//typedef ImageRandomConstIteratorWithIndex< LabelImageType > LblRegionIteratorType;
 typedef ImageRegionIterator< LabelImageType > LblEditIteratorType;
 typedef ImageRegionConstIterator< IntensityImageType > ImgRegionIteratorType;
 
@@ -101,7 +103,45 @@ public:
         }
 
         mVOICount = mLabelCount * mVOIPerLabel;
+		
+		mOffsetFromCenter = (mDiameter - 1) / 2;
 
+		mReferenceLabelMap["Trachea"] = 1;
+		mReferenceLabelMap["RB1"] = 25;
+		mReferenceLabelMap["RB3"] = 44;
+		mReferenceLabelMap["RB2"] = 45;
+		mReferenceLabelMap["BronInt"] = 7;
+		mReferenceLabelMap["RB4+5"] = 26;
+		mReferenceLabelMap["RLL7"] = 27;
+		mReferenceLabelMap["RB7"] = 92;
+		mReferenceLabelMap["RLL"] = 91;
+		mReferenceLabelMap["LMB"] = 2;
+		mReferenceLabelMap["LUL"] = 5;
+		mReferenceLabelMap["LB1+2"] = 23;
+		mReferenceLabelMap["LB3"] = 22;
+		mReferenceLabelMap["LB4+5"] = 10;
+		mReferenceLabelMap["LB4"] = 20;
+		mReferenceLabelMap["LB5"] = 21;
+		mReferenceLabelMap["LLB6"] = 4;
+		mReferenceLabelMap["LB6"] = 9;
+		mReferenceLabelMap["LLB"] = 8;
+		mReferenceLabelMap["RMB"] = 3;
+		mReferenceLabelMap["RUL"] = 6;
+		mReferenceLabelMap["RB4"] = 48;
+		mReferenceLabelMap["RB5"] = 49;
+		mReferenceLabelMap["RB6"] = 51;
+		mReferenceLabelMap["RB8"] = 137;
+		mReferenceLabelMap["RB9"] = 188;
+		mReferenceLabelMap["RB10"] = 189;
+		mReferenceLabelMap["LB1"] = 43;
+		mReferenceLabelMap["LB2"] = 42;
+		mReferenceLabelMap["LB8"] = 17;
+		mReferenceLabelMap["LB9"] = 28;
+		mReferenceLabelMap["LB10"] = 29;
+
+		for (auto it = mReferenceLabelMap.begin(); it != mReferenceLabelMap.end(); ++it) {
+			mRevReferenceLabelMap[it->second] = it->first;
+		}
 
         init();
     }
@@ -130,6 +170,7 @@ private:
     }
 
     void loadLabelMap();
+	void genReplacementLabelMap();
 	void init();
 
     static bool mIsJSONMapWritten;
@@ -142,6 +183,7 @@ private:
     unsigned int mLabelCount;
     unsigned int mVOICount;
     unsigned int mVOIPerLabel;
+	unsigned int mOffsetFromCenter;
 
     LabelMapType mLabelMap;
 
@@ -149,7 +191,13 @@ private:
 	IntensityImageType::Pointer mChannels[3];
 	LabelImageType::Pointer mLabelImage;
 
-	
+	map<string, unsigned int> mReferenceLabelMap;
+	map<unsigned int, string> mRevReferenceLabelMap;
+
+	map<string, unsigned int> mRepLabelMap;
+	map<unsigned int, string> mRevRepLabelMap;
+
+
     map<unsigned int, bool> mEnabledLabelsLookup;
     vector<unsigned int> mEnabledLabelsList;
     map<unsigned int, vector<unsigned int>> mEnabledLabelOneHot;
