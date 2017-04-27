@@ -11,13 +11,15 @@ from image_helper import ImageHelper
 
 class VOI:
 
-
-    def __init__(self, image_name, json, modes=None):
+    def __init__(self, image_id, dicom_path, dataset_path, json, modes=None):
 
         if modes is None:
             raise ValueError("VOI modes dict is required, example {'local': [25, 25, 25]}")
 
         self.center = np.array(json['idx'], dtype=np.int16)
+        self.image_id = image_id
+        self.dicom_path = dicom_path
+        self.dataset_path = dataset_path
 
         self.cubes = {}
         self.cubes_nd = {}

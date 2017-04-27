@@ -7,8 +7,8 @@ import string
 
 import numpy as np
 import tensorflow as tf
-from roi_queue import ROIQueue
-from net_calc import NetCalc
+from voi_queue import ROIQueue
+from fc_calc import FCNetwork
 from stat_helper import *
 
 class NNModel:

@@ -1,13 +1,13 @@
-#include "FullImageProcessor.h"
+#include "BinaryImageProcessor.h"
 
 
 using namespace std;
 using namespace itk;
 
-bool FullImageProcessor::mIsJSONMapWritten = false;
-mutex FullImageProcessor::mJSONMutex;
+bool ImageProcessor::mIsJSONMapWritten = false;
+mutex ImageProcessor::mJSONMutex;
 
-void FullImageProcessor::genReplacementLabelMap() {
+void ImageProcessor::genReplacementLabelMap() {
 
 	string xmlPath = mInputPath + string("/ZUNU_vida-xmlTree.xml");
 	TiXmlDocument doc( xmlPath.c_str() );
@@ -25,87 +25,7 @@ void FullImageProcessor::genReplacementLabelMap() {
 	std::cout << "Done Rep Map" << endl;
 }
 
-
-void FullImageProcessor::saveIndices() {
-	//TODO: Store indices and leave VOI extraction and rotation to the VOI Queue
-	writeJSON();
-
-	IntensityImageType::SizeType imageSize = mIntensityImage->GetLargestPossibleRegion().GetSize();
-
-	unsigned long offset_X = 0;
-	unsigned long offset_Y = 0;
-	unsigned int labelCounter = 0;
-	unsigned int labelIdx = 0;
-	stringstream vois;
-	
-	vois << "{" << endl;
-	vois << "\t\"id\": \"" << mItemName << "\"," << endl;
-	vois << "\t\"dataset_path\": \"" << mInputPath << "\"," << endl;
-	vois << "\t\"dicom_path\": \"" << mInputPath + "/dicom/" << "\"," << endl;
-	vois << "\t\"vois\": [" << endl;
-
-
-	for (auto labelIt = mEnabledLabelsList.begin(); labelIt != mEnabledLabelsList.end(); ++labelIt) {
-
-		unsigned int label = *labelIt;
-
-		vector<IntensityIndexType> idxList = mLabelMap[label];
-
-		unsigned int labelsToLookFor = min<unsigned int>(idxList.size(), mVOIPerLabel);
-		if (idxList.size() < mVOIPerLabel) {
-			std::cerr << "Insufficient VOIs for label " << label << " in path " << mInputPath << endl;
-		}
-
-		for (int i = 0; i < labelsToLookFor; i++) {
-			bool isFirstVOI = i == 0 && labelIt == mEnabledLabelsList.begin();
-			if (!isFirstVOI) {
-				vois << ", " << endl;
-			}
-			auto idxIt = idxList.begin();
-			int off = int(idxList.size() * (double)std::rand() / RAND_MAX);
-			std::advance(idxIt, off);
-
-			string labelText = mRevReferenceLabelMap[label];
-			if (label == 0) {
-				labelText = "Background";
-			}
-			if (label == 500) {
-				labelText = "Lung";
-			}
-			IntensityImageType::IndexType center = *idxIt;
-			vois << "\t\t{" << endl;
-			vois << "\t\t\t\"idx\": [" << center[0] << ", "  << center[1] << ", " << center[2] << "]," << endl;
-			vois << "\t\t\t\"cls\": " << label << "," << endl;
-			vois << "\t\t\t\"cls_name\": \"" << labelText << "\"," << endl;
-			vois << "\t\t\t\"cls_arr\": [";
-
-			int counter = 0;
-			for (auto it = mEnabledLabelOneHot[label].begin(); it != mEnabledLabelOneHot[label].end(); ++it) {
-				unsigned int v = *it;
-				if (counter != 0) {
-					vois << ", ";
-				}
-				vois << v;
-				counter++;
-			}
-			vois << "]" << endl;
-			vois << "\t\t}";
-		}
-	}
-
-	vois << endl << "\t]" << endl << "}" << endl;
-
-	ofstream jsonFile;
-	jsonFile.open(mOutputPath + "/" + mItemName + ".json");
-	jsonFile << vois.str();
-	jsonFile.close();
-
-	//cout << ss.str();
-}
-
-void FullImageProcessor::saveNpz() {
-
-	writeJSON();
+void ImageProcessor::process() {
 
 	IntensityImageType::Pointer images[4] = {
 		mIntensityImage,
@@ -210,64 +130,50 @@ void FullImageProcessor::saveNpz() {
     delete data_X;
     delete data_Y;
 
+    lock_guard<mutex> lock(mJSONMutex);
+    if(!mIsJSONMapWritten) {
+        stringstream ss;
+        ss << "{" << endl;
+        for(auto it=mEnabledLabelOneHot.begin(); it != mEnabledLabelOneHot.end(); ++it) {
+            ss << "\t" << it->first <<  ": " << "[";
+            for(int i=0; i<it->second.size(); ++i) {
+                if(i != 0) {
+                    ss << ", ";
+                }
+                ss << it->second[i];
+            }
+            ss << "]," << endl;
+        }
+        ss << "}" << endl;
 
+
+        ofstream jsonFile;
+        jsonFile.open (mOutputPath + "/class_map.json");
+        jsonFile << ss.str();
+        jsonFile.close();
+        mIsJSONMapWritten = true;
+
+        cout << "JSON class map file written" << endl;
+    }
 
 
 }
+void ImageProcessor::loadLabelMap() {
 
-void FullImageProcessor::writeJSON() {
-	lock_guard<mutex> lock(mJSONMutex);
-	if (!mIsJSONMapWritten) {
-		stringstream ss;
-		ss << "{" << endl;
-		for (auto it = mEnabledLabelOneHot.begin(); it != mEnabledLabelOneHot.end(); ++it) {
-			ss << "\t" << it->first << ": " << "[";
-			for (int i = 0; i<it->second.size(); ++i) {
-				if (i != 0) {
-					ss << ", ";
-				}
-				ss << it->second[i];
-			}
-			ss << "]," << endl;
-		}
-		ss << "}" << endl;
-
-
-		ofstream jsonFile;
-		jsonFile.open(mOutputPath + "/class_map.json");
-		jsonFile << ss.str();
-		jsonFile.close();
-		mIsJSONMapWritten = true;
-
-		cout << "JSON class map file written" << endl;
-	}
-}
-void FullImageProcessor::loadLabelMap() {
-
-	if (!mIsBinary) {
-		genReplacementLabelMap();
-	}
+	genReplacementLabelMap();
 
 	SubtractLabelFilterType::Pointer subtractFilter = SubtractLabelFilterType::New();
 	AddLabelFilterType::Pointer addFilter = AddLabelFilterType::New();
 
 	//Read Labels
 	string airwayLabelFilename = mInputPath + "/ZUNU_vida-aircolor.img.gz";
-	string airwayBinaryFilename = mInputPath + "/ZUNU_vida-airtree.img.gz";
 	string lungLabelFilename = mInputPath + "/ZUNU_vida-lung.img.gz";
 
 	LabelReaderType::Pointer airwayReader = LabelReaderType::New();
 	LabelReaderType::Pointer lungReader = LabelReaderType::New();
 
-	if (mIsBinary) {
-		airwayReader->SetFileName(airwayBinaryFilename);
-		airwayReader->Update();
-		mLabelImage = airwayReader->GetOutput();
-		return;
-	} else {
-		airwayReader->SetFileName(airwayLabelFilename);
-		airwayReader->Update();
-	}
+	airwayReader->SetFileName(airwayLabelFilename);
+	airwayReader->Update();
 	LabelImageType::Pointer airwayImage = airwayReader->GetOutput();
 
 	lungReader->SetFileName(lungLabelFilename);
@@ -321,7 +227,7 @@ void FullImageProcessor::loadLabelMap() {
 	//writerLabels->Update();
 
 }
-void FullImageProcessor::init() {
+void ImageProcessor::init() {
 
 	typedef GDCMImageIO          ImageIOType;
 	typedef GDCMSeriesFileNames  NamesGeneratorType;
@@ -334,7 +240,7 @@ void FullImageProcessor::init() {
 	namesGenerator->SetInputDirectory(intensityDirname);
 	readerIntensity->SetImageIO(gdcmIO);
 	readerIntensity->SetFileNames(namesGenerator->GetInputFileNames());
-    //readerIntensity->Update();
+    readerIntensity->Update();
 
 	mIntensityImage = readerIntensity->GetOutput();
 
@@ -374,11 +280,7 @@ void FullImageProcessor::init() {
 	long loadedVOIs = 0;
 	LblRegionIteratorType it(mLabelImage, mLabelImage->GetLargestPossibleRegion());
 	//it.SetNumberOfSamples(mVOICount * 5);
-	vector<LabelIndexType>* backgroundList = &mLabelMap[0];
-	vector<LabelIndexType>* lungList = &mLabelMap[500];
-
     for(it.GoToBegin(); !it.IsAtEnd(); ++it) {
-
 
         LabelPixelType label = it.Get();
 		LabelIndexType idx = it.GetIndex();
@@ -387,30 +289,16 @@ void FullImageProcessor::init() {
 			continue;
 		}
 
-		//Improve pefromance by avoiding doing hash lookups for frequent labels like 0 and 500 
-		if (label == 0) {
-			if (backgroundList->size() < mVOICount * 3) {
-				backgroundList->push_back(idx);
-				++loadedVOIs;
-			}
+		if (label == 500 && mLabelMap[500].size() > mVOICount * 3) {
 			continue;
 		}
 
-		if (label == 500) {
-			if (lungList->size() < mVOICount * 3) {
-				lungList->push_back(idx);
-				++loadedVOIs;
-			}
-			continue;
-		}
-
-		if(mEnabledLabelsLookup.find(label) == mEnabledLabelsLookup.end()) {
+		if(label == 0 || mEnabledLabelsLookup.find(label) == mEnabledLabelsLookup.end()) {
 			continue;
         }
-
+        
 		mLabelMap[label].push_back(idx);
 		++loadedVOIs;
-
 
     }
 

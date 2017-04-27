@@ -100,7 +100,7 @@ int main(int argc, char* argv[]) {
         job.enabledLabels = enabledLabels;
         job.inputPath = inputPaths[i];
         job.outputPath = outputPath;
-		job.isBinary = false;
+		job.isBinary = true;
         queue->enqueue(job);
     }
 

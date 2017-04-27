@@ -1,8 +1,11 @@
 from queue import *
 from glob import glob
+from voi import VOI
 
+import json
 import numpy as np
 import SimpleITK as sitk
+
 
 import os
 import time
@@ -38,12 +41,6 @@ class VOIQueue:
             'test': []
         }
 
-        self.active_files = {
-            'train': [],
-            'validate': [],
-            'test': []
-        }
-
         self.epoch_count = {
             'train': 0,
             'validate': 0,
@@ -56,6 +53,12 @@ class VOIQueue:
             'test': []
         }
 
+        self.active_images = {
+            'train': {},
+            'validate': {},
+            'test': {}
+        }
+
         self.q = {
             'train': Queue(maxsize=self.max_size),
             'validate': Queue(maxsize=self.max_size),
@@ -64,7 +67,7 @@ class VOIQueue:
 
         self.make_train_test_per_dataset()
 
-    def __init__(self, dataset_path, epochs_per_dataset=5, random_seed=None, train_angles=None, batch_size=32, validate_count=3, test_count=3):
+    def __init__(self, dataset_path, epochs_per_dataset=5, random_seed=None, train_angles=None, batch_size=32, validate_count=2, test_count=2):
 
         self.input_path = dataset_path
         self.datasets_per_batch = 5
@@ -115,6 +118,7 @@ class VOIQueue:
         self.available_files = None
         self.epoch_count = None
         self.active_files = None
+        self.active_images = None
 
         self.fileset_lock = threading.Lock()
         self.worker_sema = {
@@ -125,7 +129,6 @@ class VOIQueue:
         self.shutdown_signal = False
 
         self.reload()
-
 
     def __enter__(self):
         self.start()
@@ -143,7 +146,7 @@ class VOIQueue:
     def make_train_test_per_dataset(self):
 
         """Breaks dataset into train, validate, test and doesn't care about class distribution"""
-        files = glob(os.path.relpath("{0}/*_X.npz".format(self.input_path)))
+        files = glob(os.path.relpath("{0}/*.json".format(self.input_path)))
 
         random.shuffle(files)
 
@@ -162,8 +165,8 @@ class VOIQueue:
         self.load_next_dataset('validate')
         self.load_next_dataset('test')
 
-        self.std = np.std(self.data_templates['train'][0])
-        self.mean = np.mean(self.data_templates['train'][0])
+        self.std = 1
+        self.mean = 0
 
     def load_next_dataset(self, mode):
         with self.fileset_lock:
@@ -176,37 +179,37 @@ class VOIQueue:
                 if len(self.available_files[mode]) < limit:
                     self.available_files[mode] = self.files[mode][:]
 
-                self.active_files[mode] = []
-                X_accum = None
-                Y_accum = None
+                self.data_templates[mode] = []
+                self.active_images[mode] = {}
                 for i in range(0, limit):
                     filename = self.available_files[mode].pop()
-                    X, Y = self.load_dataset(filename)
-                    self.active_files[mode].append({
-                        "name": filename,
-                        "size": X.shape[0]
-                    })
-                    if X_accum is None:
-                        X_accum = X
-                        Y_accum = Y
-                    else:
-                        X_accum = np.concatenate((X_accum, X), 0)
-                        Y_accum = np.concatenate((Y_accum, Y), 0)
-
-                self.data_templates[mode] = X_accum, Y_accum
+                    self.load_dataset(mode, filename)
                 self.epoch_count[mode] = 0
             finally:
                 # Allow worker to resume
                 for i in range(0, self.worker_thread_count):
                     self.worker_sema[mode].release()
 
-    def load_dataset(self, X_filename):
-        Y_filename = X_filename.replace("_X", "_Y")
-        filename = os.path.splitext(os.path.basename(X_filename).replace("_X", ""))[0]
-        data_1 = np.load(X_filename)
-        data_2 = np.load(Y_filename)
-        return data_1[filename], data_2[filename]
+    def load_dataset(self, mode, filename):
+        modes = {
+            'global': [53, 53, 53],
+            'local': [33, 33, 33]
+        }
+        voi_list = []
+        with open(filename) as data_file:
+            data = json.load(data_file)
 
+            dataset_id = data['id']
+            dicom_path = data['dicom_path']
+
+            reader = sitk.ImageSeriesReader()
+            dicom_names = reader.GetGDCMSeriesFileNames(dicom_path)
+            reader.SetFileNames(dicom_names)
+
+            self.active_images[mode][dataset_id] = reader.Execute()
+
+            for voi_data in data['vois']:
+                self.data_templates[mode].append(VOI(dataset_id, data['dataset_path'], dicom_path, voi_data, modes=modes))
 
 
     def get_all(self, dataset):
@@ -300,46 +303,6 @@ class VOIQueue:
             for t in self.worker_threads[idx]:
                 t.join()
 
-    def rotate_voi(self, voi, rotation):
-        rotation = None
-        if rotation is None or sum(rotation) == 0:
-            return voi
-
-        rotation = np.float32(rotation) * (math.pi/180)
-        half_voi_size = np.float16(np.array(voi.shape)) / 2
-        rotation_center = np.float32(half_voi_size - 0.5)
-
-
-        rigid_euler = sitk.Euler3DTransform()
-        rigid_euler.SetRotation(float(rotation[0]), float(rotation[1]), float(rotation[2]))
-
-        rigid_euler.SetCenter([
-                float(rotation_center[0]),
-                float(rotation_center[1]),
-                float(rotation_center[2])
-        ])
-        ndarray = np.swapaxes(
-                    sitk.GetArrayFromImage(
-                        sitk.Resample(
-                            sitk.GetImageFromArray(np.swapaxes(voi, 0, 2)),
-                            rigid_euler,
-                            sitk.sitkLinear,
-                            0,
-                            sitk.sitkFloat32
-                        )
-                    ),
-                    0, 2)
-        print(voi)
-        new_center = (np.array(ndarray.shape) / 2)
-        new_start = np.int16(new_center - half_voi_size)
-        new_end = np.int16(new_center + half_voi_size)
-
-        return np.float32(ndarray[
-            new_start[0]:new_end[0],
-            new_start[1]:new_end[1],
-            new_start[2]:new_end[2]
-        ])
-
     def worker(self, mode):
 
         rotations = self.angles
@@ -350,62 +313,40 @@ class VOIQueue:
             if self.epochs_per_dataset[mode] != -1 and self.epoch_count[mode] > self.epochs_per_dataset[mode]:
                 self.load_next_dataset(mode)
 
-            self.worker_sema[mode].acquire()
+            try:
+                self.worker_sema[mode].acquire()
 
-            selected_dataset = self.data_templates[mode]
-            selected_range = rotations[mode]
-            selected_q = self.q[mode]
+                selected_dataset = self.data_templates[mode]
+                selected_range = rotations[mode]
+                selected_q = self.q[mode]
 
-            rotation_list = []
-            for idx in range(0, 3):
-                rotation_list.append(random.choice(selected_range))
+                rotation_list = []
+                for idx in range(0, 3):
+                    rotation_list.append(random.choice(selected_range))
 
-            X, Y = selected_dataset
-            num_of_examples, dim_x, dim_y, dim_z = X.shape
-            idx = random.choice(range(0, num_of_examples))
+                voi = random.choice(selected_dataset)
+                voi_image = self.active_images[mode][voi.image_id]
+                cube = voi.get_cube(voi_image, 'global', rotation=rotation_list)
 
-            raw_voi = X[idx,]
-            # raw_voi -= self.mean
-            # raw_voi /= self.std
 
-            voi = self.rotate_voi(raw_voi, rotation_list)
+                dim_local = 33
+                dim_global = cube.shape[0]
 
-            dim_local = 33
-            dim_global = dim_x
+                start_offset = int((dim_global - dim_local) / 2)
+                end_offset = start_offset + dim_local
 
-            start_offset = int((dim_global - dim_local) / 2)
-            end_offset = start_offset + dim_local
-            X = {
-                'global': voi,
-                'local' : voi[start_offset:end_offset, start_offset:end_offset, start_offset:end_offset]
-            }
-            Y = Y[idx,]
+                X = {
+                    'global': cube,
+                    'local' : cube[start_offset:end_offset, start_offset:end_offset, start_offset:end_offset]
+                }
+                Y = voi.y
 
-            selected_file = self.active_files[mode][0]['name']
-            ds_idx = idx
-            if idx > self.active_files[mode][0]['size']:
-                ds_idx -= self.active_files[mode][0]['size']
-                selected_file = self.active_files[mode][1]['name']
+                item = (X, Y, voi, rotation_list)
 
-            voi_meta = {
-                'raw_id': idx,
-                'idx': ds_idx,
-                'mode': mode,
-                'name': selected_file
-            }
-            item = (X, Y, voi_meta, rotation_list)
+                selected_q.put(item)
 
-            #if mode == 'train':
-            #    print("Worker Putting Item")
-            selected_q.put(item)
-            #if mode == 'train':
-            #    print("Worker Put Item")
+                self.epoch_count[mode] += 1 / len(selected_dataset)
 
-            # Not thread safe but has no side effects except maybe increased number of iterations per epoch
-            self.epoch_count[mode] += 1 / num_of_examples
-
-            #if mode == 'train':
-            #   print("Added train")
-
-            self.worker_sema[mode].release()
+            finally:
+                self.worker_sema[mode].release()
 

@@ -42,9 +42,9 @@ if len(dirs_to_process) > 0:
         segs = [bin_path]
         [segs.extend(['-i', i]) for i in batch_dirs]
         [segs.extend(['-l', str(l)]) for l in enabled_labels]
-        segs.extend(['-o', os.path.abspath('./Output')])
+        segs.extend(['-o', os.path.abspath('./Output/2_class/')])
         segs.extend(['-d', '53'])
-        segs.extend(['-v', '30'])
+        segs.extend(['-v', '10000'])
         segs.extend(['-r', '1992'])
         segs.extend(['-t', str(batches_per_exe)])
         runner.enqueue(batches_per_exe, segs)
