@@ -17,6 +17,7 @@ BadLog
 bld
 cmake-build-debug
 *.npz
+logs/
 
 ## Core latex/pdflatex auxiliary files:
 *.aux
