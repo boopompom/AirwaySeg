@@ -8,8 +8,9 @@ import string
 
 import numpy as np
 import tensorflow as tf
-from roi_queue import ROIQueue
+from voi_queue import VOIQueue
 from net_calc import NetCalc
+from fc_net import FullyConvNetwork
 from stat_helper import *
 
 import pandas as pd
@@ -250,7 +251,7 @@ class NNModel:
             self.num_classes = model_meta_data['num_classes']
 
 
-    def __init__(self, network_arch, input_shape, num_classes, name=None, mode='train', model_state_path=None):
+    def __init__(self, name=None, mode='train', model_state_path=None):
 
         self.name = name
         self.model_path = None
@@ -259,27 +260,18 @@ class NNModel:
 
         self.model_meta_information = None
 
-        if network_arch is None and model_state_path is not None:
-            self.build_from_saved_state(model_state_path)
-        else:
-            self.model_state_path = None
-            self.network_arch = json.loads(network_arch)
-            self.num_classes = num_classes
-            self.input_shape = input_shape
-
         self.graph = None
         self.graph_scope = NNModel.gen_id()
 
         self.model = None
         self.X = None
         self.Y = None
+        self.reg = None
         self.correct_pred = None
         self.accuracy = None
 
         self.session = None
         self.train_params = None
-
-        self.network_builder = NetCalc(self.input_shape, self.num_classes, 32, mode=mode, print_only=False)
 
         self.graph = tf.Graph()
 
@@ -412,13 +404,16 @@ class NNModel:
         pickle.dump(self.model_meta_information, open(meta_filename, "wb"))
 
     def train(self, dataset_filename, cv_folds=10, angles=None, iterations=8e6, batch_size=32, steps_to_downscale=2,
-              drop_out=0.5, reg_power=5e-4, learning_rate=1e-5, engine=None):
+              drop_out=0.5, reg_power=5e-4, learning_rate=1e-5):
 
         with self.graph.as_default() as g:
             with tf.Session(graph=self.graph) as self.session:
-                self.model = self.network_builder.build_from_config(self.network_arch)
-                self.X = self.network_builder.get_X()
-                self.Y = tf.placeholder(tf.float32, [None, self.num_classes], name="y")
+                m = FullyConvNetwork().get()
+                self.X = m['X']
+                self.Y = m['Y']
+                self.model = m['model']
+                self.reg = m['reg']
+
                 if angles is None:
                     angles = {
                         'train': None,
@@ -426,17 +421,14 @@ class NNModel:
                         'test': None
                     }
 
-                roi_queue = ROIQueue(
+                voi_queue = VOIQueue(
                     dataset_filename,
+                    random_seed=1992,
                     batch_size=batch_size,
-                    train_angles=angles['train'],
-                    validate_angles=angles['validate'],
-                    test_angles=angles['test'],
-                    engine=engine
                 )
 
                 self._train(
-                    roi_queue,
+                    voi_queue,
                     iterations=iterations,
                     batch_size=batch_size,
                     steps_to_downscale=steps_to_downscale,
@@ -445,11 +437,11 @@ class NNModel:
                     learning_rate=learning_rate,
                 )
 
-    def _train(self, roi_queue, iterations=8e6, batch_size=32, steps_to_downscale=2,
-              drop_out=0.5, reg_power=5e-4, learning_rate=1e-5):
+    def _train(self, voi_queue, iterations=8e6, batch_size=32, steps_to_downscale=2,
+               drop_out=0.5, reg_power=5e-4, learning_rate=1e-5):
 
         no_improvement_limit = steps_to_downscale
-        validation_batch_size = 64
+        validation_batch_size = 16
 
         steps_with_no_improvement = 0
         highest_validation_acc = 0
@@ -463,37 +455,42 @@ class NNModel:
         sm_stat_train_acc = []
         sm_stat_vd_acc = []
 
-        full_input_shape = {}
-        for subset_id in self.input_shape:
-            full_input_shape[subset_id] = [None]
-            full_input_shape[subset_id].extend(self.input_shape[subset_id][:])
+        full_input_shape = {
+            'global': [None, 53, 53, 53, 1],
+            'local':  [None, 33, 33, 33, 1]
+        }
 
         sess = self.session
         saver = tf.train.Saver()
 
         learning_rate_var = tf.placeholder(tf.float32, shape=[])
-        if self.model_state_path is not None:
-            saver.restore(sess, self.model_state_path)
+        #if self.model_state_path is not None:
+        #    saver.restore(sess, self.model_state_path)
 
-        cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.model, labels=self.Y))
-        cost += reg_power * self.network_builder.get_reg()
+        res = tf.reshape(self.model, [batch_size, 32])
+        raw_cost = tf.nn.softmax_cross_entropy_with_logits(logits=res, labels=self.Y)
+        cost = tf.reduce_mean(raw_cost)
+        cost += reg_power * self.reg
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate_var).minimize(cost)
 
-        correct_pred = self.correct_pred = tf.equal(tf.argmax(self.model, 1), tf.argmax(self.Y, 1))
+        correct_pred = self.correct_pred = tf.equal(tf.argmax(res, dimension=1), tf.argmax(self.Y, dimension=1))
         accuracy = self.accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
-        init = tf.initialize_all_variables()
+        raw_scores = tf.argmax(res, dimension=1)
+        raw_correct = tf.argmax(self.Y, 1)
+        raw_accuracy = tf.cast(correct_pred, tf.float32)
+
+        init = tf.global_variables_initializer()
         sess.run(init)
+
+
 
         self.model_meta_information = {
             "name": self.name,
             "type": "convnet",
-            "arch": self.network_arch,
             "date": time.time(),
-            "mean": roi_queue.mean,
-            "std": roi_queue.std,
-            "input_shape": self.input_shape,
-            "num_classes": self.num_classes,
+            "mean": voi_queue.mean,
+            "std": voi_queue.std,
             "steps_to_downscale": steps_to_downscale,
             "iterations_req": iterations,
             "time_start": time.time(),
@@ -513,14 +510,19 @@ class NNModel:
             "result": None
         }
 
+
+        writer = tf.summary.FileWriter("./logs/tf_logs/")
+        writer.add_graph(sess.graph)
+        writer.flush()
+        writer.close()
+
         stat_step = 20
-        display_step = 1000
+        display_step = 2000
         train_loss = 0
         step = 1
         current_learning_rate = learning_rate
         # logger = tf.train.SummaryWriter('BadLog', sess.graph)
-
-        with roi_queue as roi_generator:
+        with voi_queue as roi_generator:
             next(roi_generator)
             try:
                 while step * batch_size < iterations:
@@ -551,6 +553,10 @@ class NNModel:
                             validation_dict[self.X[idx]] = validation_batch_x[idx]
 
                         train_acc, train_loss = sess.run([accuracy, cost], feed_dict=train_dict)
+                        raw_score = sess.run([self.model], feed_dict=train_dict)
+                        cst, m, s, c, a = sess.run([raw_cost, res, raw_scores, raw_correct, raw_accuracy], feed_dict=train_dict)
+
+
                         validation_acc, validation_loss = sess.run([accuracy, cost], feed_dict=validation_dict)
                         stat_data_loss.append([step * batch_size, train_loss])
                         stat_train_acc.append([step * batch_size, train_acc])
@@ -604,10 +610,11 @@ class NNModel:
             except KeyboardInterrupt:
                 print("Optimization Terminated!")
             finally:
-                test_batch_x, test_batch_y, roi, rotation = roi_queue.get_all('test')
+                pass
+                #test_batch_x, test_batch_y, roi, rotation = voi_queue.get_all('test')
                 # test_batch_x, test_batch_y, roi, rotation = roi_generator.send(('test', 1000, False, True))
-                self.evaluate_model(test_batch_x, test_batch_y, roi)
-                self._save(saver, sess, roi_queue)
+                #self.evaluate_model(test_batch_x, test_batch_y, roi)
+                #self._save(saver, sess, voi_queue)
                 # logger.close()
 
 

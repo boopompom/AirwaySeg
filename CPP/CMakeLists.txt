@@ -19,8 +19,11 @@ add_executable(DICOMProcessor
 	cnpy.h
 	cnpy.cpp
 
-	ImageProcessor.h
-	ImageProcessor.cpp
+	FullImageProcessor.h
+	FullImageProcessor.cpp
+
+	BinaryImageProcessor.h
+	BinaryImageProcessor.cpp
 
 	ThreadedQueue.h
 	ThreadedQueue.cpp 

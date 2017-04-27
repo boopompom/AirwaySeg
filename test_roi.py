@@ -1,16 +1,35 @@
+
 import time
 import sys
 import numpy as np
-from roi_queue import ROIQueue
+from voi_queue import VOIQueue
+from voi import VOI
 
-batch_size = 32
-roi_q = ROIQueue(
-    'datasets/scaled_repeat_6.p',
-    train_angles=[0],
-    validate_angles=[0],
-    test_angles=[0],
-    batch_size=batch_size
-)
+import SimpleITK as sitk
+import threading
+import json
+import pprint
+with open('./Output/143.json') as data_file:
+    data = json.load(data_file)
+    for voi_data in data:
+
+        v = VOI("143", voi_data, modes={
+            'global': [53, 53, 53],
+            'local': [33, 33, 33]
+        })
+        reader = sitk.ImageSeriesReader()
+        dicom_names = reader.GetGDCMSeriesFileNames("D:/Vida/ResultsDir2.0/143/dicom")
+        reader.SetFileNames(dicom_names)
+        image = reader.Execute()
+        c = v.get_cube(image, 'local', [53, 53, 53])
+        print(c)
+        exit()
+
+
+#batch_size = 32
+#roi_q = VOIQueue('./Output/', random_seed=1992)
+
+
 
 train_counter = {}
 test_counter = {}

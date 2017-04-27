@@ -10,7 +10,7 @@
 
 #include "optionparser.h"
 #include "ThreadedQueue.h"
-#include "ImageProcessor.h"
+#include "FullImageProcessor.h"
 #include "CommandLineProcessor.h"
 
 using namespace std;
@@ -20,7 +20,7 @@ using namespace itk;
 
 void worker(shared_ptr<ThreadedQueue<DICOMJob>> q) {
     while(q->size() != 0) {
-        ImageProcessor(q->dequeue()).process();
+        FullImageProcessor(q->dequeue()).saveIndices();
         if(q->size() == 0) {
             q->terminate();
         }
@@ -100,6 +100,7 @@ int main(int argc, char* argv[]) {
         job.enabledLabels = enabledLabels;
         job.inputPath = inputPaths[i];
         job.outputPath = outputPath;
+		job.isBinary = false;
         queue->enqueue(job);
     }
 
