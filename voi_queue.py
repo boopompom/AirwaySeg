@@ -327,7 +327,8 @@ class VOIQueue:
                 voi = random.choice(selected_dataset)
                 voi_image = self.active_images[mode][voi.image_id]
                 cube = voi.get_cube(voi_image, 'global', rotation=rotation_list)
-
+                if cube is None:
+                    raise ValueError("Invalid cube!")
 
                 dim_local = 33
                 dim_global = cube.shape[0]

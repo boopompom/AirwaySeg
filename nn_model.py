@@ -251,8 +251,9 @@ class NNModel:
             self.num_classes = model_meta_data['num_classes']
 
 
-    def __init__(self, name=None, mode='train', model_state_path=None):
+    def __init__(self, name=None, num_classes=None, mode='train', model_state_path=None):
 
+        self.num_classes= num_classes
         self.name = name
         self.model_path = None
         self.mean = 0
@@ -408,7 +409,7 @@ class NNModel:
 
         with self.graph.as_default() as g:
             with tf.Session(graph=self.graph) as self.session:
-                m = FullyConvNetwork().get()
+                m = FullyConvNetwork(num_classes=self.num_classes).get()
                 self.X = m['X']
                 self.Y = m['Y']
                 self.model = m['model']
@@ -467,7 +468,7 @@ class NNModel:
         #if self.model_state_path is not None:
         #    saver.restore(sess, self.model_state_path)
 
-        res = tf.reshape(self.model, [batch_size, 32])
+        res = tf.reshape(self.model, [batch_size, self.num_classes])
         raw_cost = tf.nn.softmax_cross_entropy_with_logits(logits=res, labels=self.Y)
         cost = tf.reduce_mean(raw_cost)
         cost += reg_power * self.reg

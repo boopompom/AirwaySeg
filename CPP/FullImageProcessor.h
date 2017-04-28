@@ -135,7 +135,7 @@ public:
 
         mVOICount = mLabelCount * mVOIPerLabel;
 		
-		mOffsetFromCenter = (mDiagonal - 1) / 2;
+		mOffsetFromCenter = ((mDiagonal - 1) / 2);
 		if (mIsBinary) {
 			mReferenceLabelMap["Airyway"] = 255;
 			mReferenceLabelMap["Background"] = 0;
@@ -222,7 +222,7 @@ private:
     unsigned int mLabelCount;
     unsigned int mVOICount;
     unsigned int mVOIPerLabel;
-	unsigned int mOffsetFromCenter;
+	int mOffsetFromCenter;
 
     LabelMapType mLabelMap;
 

@@ -89,9 +89,13 @@ class VOI:
 
             voi_size = [int(sz[0]), int(sz[1]), int(sz[2])]
             voi_start = [int(st[0]), int(st[1]), int(st[2])]
+            try:
+                self.cubes[mode] = sitk.RegionOfInterest(image, voi_size, voi_start)
+                self.cubes_nd[mode] = sitk.GetArrayFromImage(self.cubes[mode])
+            except:
+                return None
+                #print("ERR")
 
-            self.cubes[mode] = sitk.RegionOfInterest(image, voi_size, voi_start)
-            self.cubes_nd[mode] = sitk.GetArrayFromImage(self.cubes[mode])
 
         cube = self.cubes[mode]
         cube_nd = self.cubes_nd[mode]

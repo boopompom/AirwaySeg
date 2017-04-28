@@ -82,10 +82,15 @@ int main(int argc, char* argv[]) {
     }
     std::srand((unsigned int)randomSeed);
 
-    unsigned int threadCount = 1;
-    if(options[THREAD_COUNT]) {
-        threadCount = (unsigned int)std::stoi(options[THREAD_COUNT].first()->arg);
-    }
+	unsigned int threadCount = 1;
+	if (options[THREAD_COUNT]) {
+		threadCount = (unsigned int)std::stoi(options[THREAD_COUNT].first()->arg);
+	}
+
+	bool binary = false;
+	if (options[BINARY_INPUT]) {
+		binary = true;
+	}
 
     unsigned int voiPerLabel = 50;
     if(options[VOI_PER_LABEL]) {
@@ -100,7 +105,7 @@ int main(int argc, char* argv[]) {
         job.enabledLabels = enabledLabels;
         job.inputPath = inputPaths[i];
         job.outputPath = outputPath;
-		job.isBinary = true;
+		job.isBinary = binary;
         queue->enqueue(job);
     }
 

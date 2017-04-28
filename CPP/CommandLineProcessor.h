@@ -49,6 +49,7 @@ enum  optionIndex {
     UNKNOWN, HELP, THREAD_COUNT,
     RANDOM_SEED, INPUT_LIST, LABEL_LIST,
     VOI_PER_LABEL, OUTPUT_PATH, DIAMETER,
+	BINARY_INPUT
 };
 
 const option::Descriptor usage[] =
@@ -60,7 +61,8 @@ const option::Descriptor usage[] =
     {LABEL_LIST, 0, "l", "label", Arg::NonEmpty, "  --label, -l  \tSpecifies one label to use (Can specify more than one)." },
     {OUTPUT_PATH, 0, "o", "output-path", Arg::NonEmpty, "  --output-pat, -o  \tOutput path." },
 
-    {THREAD_COUNT, 0, "t", "thread-count", Arg::Numeric, "  --thread-count, -t  \tNumber of thread (default : 3)." },
+	{BINARY_INPUT, 0, "b", "binary", Arg::None, "  --binary, -b  \tWhether or not to build a binary dataset." },
+	{THREAD_COUNT, 0, "t", "thread-count", Arg::Numeric, "  --thread-count, -t  \tNumber of thread (default : 3)." },
     {RANDOM_SEED, 0, "r", "random-seed", Arg::Numeric, "  --random-seed, -r  \tRandom Seed (default : 1)." },
     {DIAMETER, 0, "d", "diameter", Arg::Numeric, "  --diameter, -d  \tVOI Diameter, must be odd (default : 25)." },
     {VOI_PER_LABEL, 0, "v", "voi-per-label", Arg::Numeric, "  --voi-per-label, -v  \tNumber of voi extracted for each label (default : 5)." },

@@ -5,28 +5,29 @@ import json
 
 class FullyConvNetwork:
 
-    def __init__(self):
+    def __init__(self, num_classes=None):
         self.counters = {
             'conv_unit': 0,
             'conv.count': 0,
             'maxpool.count': 0,
             'maxout.count': 0
         }
+        self.num_classes = num_classes
         self.reg = None
 
-    def get(self, num_classes=32):
+    def get(self):
 
         X_global = tf.placeholder(tf.float32, [None, 53, 53, 53, 1], name="input_global")
         X_local = tf.placeholder(tf.float32, [None, 33, 33, 33, 1], name="input_local")
 
         # model = self.conv_unit(X_local, injected_input=self.conv_unit(X_global, class_count=num_classes), class_count=num_classes)
-        model = self.conv_unit(X_local, class_count=num_classes)
+        model = self.conv_unit(X_local, class_count=self.num_classes)
         return {
             "X": {
                 'global': X_global,
                 'local': X_local
             },
-            "Y" : tf.placeholder(tf.float32, [None, num_classes], name="y"),
+            "Y" : tf.placeholder(tf.float32, [None, self.num_classes], name="y"),
             "reg": self.reg,
             "model": model
         }
