@@ -52,6 +52,11 @@ class VOI:
         self.y_name = json['cls_name']
         self.y_val = json['cls']
 
+    def get_set(self):
+        return {
+            'global': 0,
+            'local' : 0
+        }, self.y
     def get_nd_cube_center(self, cube, mode):
         size = np.int16(self.modes[mode])
 
@@ -102,6 +107,10 @@ class VOI:
         cube = self.cubes[mode]
         cube_nd = self.cubes_nd[mode]
         size = self.cubes_size[mode]
+
+        # This disables caching VOI
+        self.cubes[mode] = None
+        self.cubes_nd[mode] = None
 
         if rotation is None:
             return self.get_nd_cube_center(cube_nd, mode) if as_nd else self.get_im_cube_center(cube, mode)
