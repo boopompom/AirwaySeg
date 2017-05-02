@@ -141,37 +141,39 @@ public:
 			mReferenceLabelMap["Background"] = 0;
 		} else {
 			mReferenceLabelMap["Trachea"] = 1;
-			mReferenceLabelMap["RB1"] = 25;
-			mReferenceLabelMap["RB3"] = 44;
-			mReferenceLabelMap["RB2"] = 45;
 			mReferenceLabelMap["BronInt"] = 7;
-			mReferenceLabelMap["RB4+5"] = 26;
-			mReferenceLabelMap["RLL7"] = 27;
-			mReferenceLabelMap["RB7"] = 92;
-			mReferenceLabelMap["RLL"] = 91;
-			mReferenceLabelMap["LMB"] = 2;
-			mReferenceLabelMap["LUL"] = 5;
-			mReferenceLabelMap["LB1+2"] = 23;
-			mReferenceLabelMap["LB3"] = 22;
-			mReferenceLabelMap["LB4+5"] = 10;
-			mReferenceLabelMap["LB4"] = 20;
-			mReferenceLabelMap["LB5"] = 21;
-			mReferenceLabelMap["LLB6"] = 4;
-			mReferenceLabelMap["LB6"] = 9;
-			mReferenceLabelMap["LLB"] = 8;
 			mReferenceLabelMap["RMB"] = 3;
-			mReferenceLabelMap["RUL"] = 6;
+			mReferenceLabelMap["RB1"] = 25;
+			mReferenceLabelMap["RB2"] = 45;
+			mReferenceLabelMap["RB3"] = 44;
 			mReferenceLabelMap["RB4"] = 48;
 			mReferenceLabelMap["RB5"] = 49;
+			//mReferenceLabelMap["RB4+5"] = 26;
 			mReferenceLabelMap["RB6"] = 51;
+			mReferenceLabelMap["RB7"] = 92;
 			mReferenceLabelMap["RB8"] = 137;
 			mReferenceLabelMap["RB9"] = 188;
 			mReferenceLabelMap["RB10"] = 189;
+			mReferenceLabelMap["RLL7"] = 27;
+			mReferenceLabelMap["RUL"] = 6;
+			mReferenceLabelMap["RLL"] = 91;
+			/*
+			mReferenceLabelMap["LMB"] = 2;
 			mReferenceLabelMap["LB1"] = 43;
 			mReferenceLabelMap["LB2"] = 42;
+			mReferenceLabelMap["LB1+2"] = 23;
+			mReferenceLabelMap["LB3"] = 22;
+			mReferenceLabelMap["LB4"] = 20;
+			mReferenceLabelMap["LB5"] = 21;
+			mReferenceLabelMap["LB4+5"] = 10;
+			mReferenceLabelMap["LB6"] = 9;
 			mReferenceLabelMap["LB8"] = 17;
 			mReferenceLabelMap["LB9"] = 28;
+			mReferenceLabelMap["LLB6"] = 4;
 			mReferenceLabelMap["LB10"] = 29;
+			mReferenceLabelMap["LUL"] = 5;
+			mReferenceLabelMap["LLB"] = 8;
+			*/
 		}
 
 

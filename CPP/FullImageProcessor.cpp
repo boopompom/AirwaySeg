@@ -219,23 +219,59 @@ void FullImageProcessor::saveNpz() {
 
 }
 
+
+
 void FullImageProcessor::writeJSON() {
 	lock_guard<mutex> lock(mJSONMutex);
 	if (!mIsJSONMapWritten) {
 		stringstream ss;
+		
 		ss << "{" << endl;
-		for (auto it = mEnabledLabelOneHot.begin(); it != mEnabledLabelOneHot.end(); ++it) {
-			ss << "\t" << it->first << ": " << "[";
-			for (int i = 0; i<it->second.size(); ++i) {
-				if (i != 0) {
+		for (auto labelIt = mEnabledLabelsList.begin(); labelIt != mEnabledLabelsList.end(); ++labelIt) {
+			if (labelIt != mEnabledLabelsList.begin()) {
+				ss << ", " << endl;
+			}
+
+			unsigned int label = *labelIt;
+
+			ss << "\t\"" << label << "\": {" << endl;
+
+			string labelText = mRevReferenceLabelMap[label];
+			if (label == 0) {
+				labelText = "Background";
+			}
+			if (label == 500) {
+				labelText = "Lung";
+			}
+			ss << "\t\t\"cls\": " << label << "," << endl;
+			if (!mIsBinary && label != 0 && label != 500) {
+				ss << "\t\t\"org_cls\": " << mRepLabelMap[labelText] << "," << endl;
+			}
+			ss << "\t\t\"cls_name\": \"" << labelText << "\"," << endl;
+			ss << "\t\t\"cls_arr\": [";
+
+			int cls_idx = -1;
+			int counter = 0;
+			for (auto it = mEnabledLabelOneHot[label].begin(); it != mEnabledLabelOneHot[label].end(); ++it) {
+				unsigned int v = *it;
+				if (counter != 0) {
 					ss << ", ";
 				}
-				ss << it->second[i];
+				if (v == 1) {
+					cls_idx = counter;
+				}
+				ss << v;
+				counter++;
 			}
-			ss << "]," << endl;
+			ss << "], " << endl;
+			ss << "\t\t\"cls_idx\": " << cls_idx << endl;
+			ss << "\t}" << endl;
+			
 		}
 		ss << "}" << endl;
 
+
+		//ss << endl << "\t]" << endl << "}" << endl;
 
 		ofstream jsonFile;
 		jsonFile.open(mOutputPath + "/class_map.json");
@@ -251,6 +287,8 @@ void FullImageProcessor::loadLabelMap() {
 	if (!mIsBinary) {
 		genReplacementLabelMap();
 	}
+
+	writeJSON();
 
 	SubtractLabelFilterType::Pointer subtractFilter = SubtractLabelFilterType::New();
 	AddLabelFilterType::Pointer addFilter = AddLabelFilterType::New();
@@ -324,11 +362,15 @@ void FullImageProcessor::loadLabelMap() {
 	//writerLabels->SetInput(mLabelImage);
 	//writerLabels->Update();
 
+
+
 }
 void FullImageProcessor::init() {
 
 	typedef GDCMImageIO          ImageIOType;
 	typedef GDCMSeriesFileNames  NamesGeneratorType;
+
+	loadLabelMap();
 
 	//Read DICOM
 	string intensityDirname = mInputPath + "/dicom/";
@@ -368,7 +410,7 @@ void FullImageProcessor::init() {
 	mChannels[2] = zDerivativeFilter->GetOutput();
 	*/
 
-	loadLabelMap();
+
 
     
     LabelImageType::SizeType dim = mLabelImage->GetLargestPossibleRegion().GetSize();
