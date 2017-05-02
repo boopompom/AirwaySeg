@@ -7,7 +7,10 @@ def build_set(is_binary):
 
     dirs = os.listdir(root_path)
 
-    enabled_labels = [1, 25, 44, 45, 26, 27, 92, 91, 2, 5, 23, 22, 10, 20, 21, 4, 9, 8, 3, 6, 48, 39, 51, 137, 188, 189, 43, 42, 17, 28, 29]
+    # enabled_labels = [1, 25, 44, 45, 26, 27, 92, 91, 2, 5, 23, 22, 10, 20, 21, 4, 9, 8, 3, 6, 48, 39, 51, 137, 188, 189, 43, 42, 17, 28, 29]
+
+    # Right side
+    enabled_labels = [1, 7, 3, 25, 45, 44, 48, 49, 51, 92, 137, 188, 189, 27, 6, 91]
 
     dirs_to_process = []
     for dir in dirs:
@@ -53,8 +56,9 @@ def build_set(is_binary):
             segs.extend(['-r', '1992'])
             segs.extend(['-t', str(batches_per_exe)])
             runner.enqueue(batches_per_exe, segs)
-
+            print(" ".join(segs))
+            exit()
         runner.start()
 
-# build_set(False)
-build_set(True)
+build_set(False)
+# build_set(True)

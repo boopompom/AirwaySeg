@@ -1,3 +1,4 @@
+import gc
 import sys
 import json
 import time
@@ -127,39 +128,29 @@ class NNModel:
         }
 
 
-    def evaluate_model(self, x, y, roi):
+    def evaluate_model(self, x, y, voi_queue):
 
-        # Legacy roi objects don't have a class_map object
         class_map = None
-        if not hasattr(roi[0], 'class_map'):
-            class_map = {
-                '_Normal_ipf': 0,
-                '_Emphysema_ipf': 1,
-                '_Bronchovascular_ipf': 2,
-                '_Ground Glass_ipf': 3,
-                '_Ground Glass - Reticular_ipf': 4,
-                '_Honeycomb_ipf': 5,
-                '_Mix_ipf': 6
-            }
-        else:
-            class_map = roi[0].class_map
-
-
-        class_count = len(y[0])
+        # class_map = voi_queue.get_class_map()
+        class_count = voi_queue.get_number_of_classes()
         feed_dict = {
             self.Y: y
         }
         for idx in x:
             feed_dict[self.X[idx]] = x[idx]
 
-        predictions = self.session.run([self.correct_pred], feed_dict=feed_dict)
-        prediction = tf.argmax(self.model, 1)
+        batch_size = y.shape[0]
+
+        res = tf.reshape(self.model, [batch_size, self.num_classes])
+        # predictions = self.session.run([self.correct_pred], feed_dict=feed_dict)
+        prediction = tf.argmax(res, 1)
         labels = prediction.eval(feed_dict, session=self.session)
-        acc = self.accuracy.eval(feed_dict, session=self.session)
+
+        # acc = self.accuracy.eval(feed_dict, session=self.session)
 
         y_actual = np.where(y[:] == 1)[1]
         y_predicted = labels
-        y_original = None
+        y_original = y_actual
         if class_map is not None:
             y_original = [class_map[i.roi_org_class] for i in roi]
 
@@ -174,7 +165,7 @@ class NNModel:
         # print(NNModel.confusion_matrix(class_map, y_actual_labels, y_original_labels, y_original, y_actual))
 
         return {
-            'confusion_matrix': NNModel.confusion_matrix(y_actual_labels, y_actual_labels,   y_actual, y_predicted),
+            'confusion_matrix':          NNModel.confusion_matrix(y_actual_labels, y_actual_labels, y_actual, y_predicted),
             'confusion_matrix_original': NNModel.confusion_matrix(y_actual_labels, y_original_labels, y_original, y_predicted)
         }
 
@@ -383,24 +374,22 @@ class NNModel:
         return r
 
 
-    def _save(self, saver, sess, roi_q):
+    def _save(self, saver, sess):
 
         directory_format = "{0}/{1}_{2}_{3}/"
         filename_format = "model.{0}"
 
-        if len(self.model_meta_information["stats"]["validation_accurecy"]) == 0:
+        if len(self.model_meta_information["stats"]["validation_accuracy"]) == 0:
             return
 
-        latest_acc = self.model_meta_information["stats"]["validation_accurecy"][-1]
+        latest_acc = self.model_meta_information["stats"]["validation_accuracy"][-1]
         timestr = time.strftime("%Y%m%d-%H%M%S")
-        directory_name = os.path.abspath(directory_format.format('./models/', self.name, latest_acc, timestr)) + '/'
+        directory_name = os.path.abspath(directory_format.format('./models/', self.name, latest_acc, timestr) + '/')
         os.makedirs(directory_name, mode=0o777, exist_ok=True)
 
-        meta_filename = directory_name + filename_format.format("p")
-        ckpt_filename = directory_name + filename_format.format("ckpt")
-        test_data_filename = directory_name + "test_rois.p"
+        meta_filename = os.path.join(directory_name, filename_format.format("p"))
+        ckpt_filename = os.path.join(directory_name, filename_format.format("ckpt"))
 
-        roi_q.export('test', test_data_filename)
         saver.save(sess, ckpt_filename)
         pickle.dump(self.model_meta_information, open(meta_filename, "wb"))
 
@@ -477,14 +466,8 @@ class NNModel:
         correct_pred = self.correct_pred = tf.equal(tf.argmax(res, dimension=1), tf.argmax(self.Y, dimension=1))
         accuracy = self.accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
-        raw_scores = tf.argmax(res, dimension=1)
-        raw_correct = tf.argmax(self.Y, 1)
-        raw_accuracy = tf.cast(correct_pred, tf.float32)
-
         init = tf.global_variables_initializer()
         sess.run(init)
-
-
 
         self.model_meta_information = {
             "name": self.name,
@@ -502,33 +485,32 @@ class NNModel:
             "batch_size": batch_size,
             "initial_learning_rate": learning_rate,
             "stats": {
-                "train_accurecy": None,
-                "validation_accurecy": None,
+                "train_accuracy": None,
+                "validation_accuracy": None,
                 "train_loss": None,
                 "validation_loss" : None,
                 "learning_rate": None
             },
+            "validation_files": voi_queue.get_dataset_filenames('validate'),
+            "test_files": voi_queue.get_dataset_filenames('test'),
             "result": None
         }
 
-
-        writer = tf.summary.FileWriter("./logs/tf_logs/")
-        writer.add_graph(sess.graph)
-        writer.flush()
-        writer.close()
-
         stat_step = 20
         display_step = 2000
+
         train_loss = 0
         step = 1
+        global_step = 1
         current_learning_rate = learning_rate
-        # logger = tf.train.SummaryWriter('BadLog', sess.graph)
-        with voi_queue as roi_generator:
-            next(roi_generator)
+
+        with voi_queue as voi_generator:
+            next(voi_generator)
             try:
-                while step * batch_size < iterations:
+                while global_step * batch_size < iterations:
+                    global_step += 1
                     step += 1
-                    batch_x, batch_y, roi, rotation = roi_generator.send(('train', batch_size, False, True))
+                    batch_x, batch_y, roi, rotation = voi_generator.send(('train', batch_size, False, True))
                     train_dict = {
                         self.Y: batch_y
                     }
@@ -539,12 +521,10 @@ class NNModel:
 
                     train_dict[learning_rate_var] = current_learning_rate
 
-
-                    # Run optimization op (backprop)
                     _ = sess.run([optimizer], feed_dict=train_dict)
 
                     if step % stat_step == 0:
-                        validation_batch_x, validation_batch_y, roi, rotation = roi_generator.send(('validate', validation_batch_size, False, True))
+                        validation_batch_x, validation_batch_y, roi, rotation = voi_generator.send(('validate', validation_batch_size, False, True))
                         validation_dict = {
                             self.Y: validation_batch_y
                         }
@@ -554,25 +534,24 @@ class NNModel:
                             validation_dict[self.X[idx]] = validation_batch_x[idx]
 
                         train_acc, train_loss = sess.run([accuracy, cost], feed_dict=train_dict)
-                        raw_score = sess.run([self.model], feed_dict=train_dict)
-                        cst, m, s, c, a = sess.run([raw_cost, res, raw_scores, raw_correct, raw_accuracy], feed_dict=train_dict)
-
-
                         validation_acc, validation_loss = sess.run([accuracy, cost], feed_dict=validation_dict)
-                        stat_data_loss.append([step * batch_size, train_loss])
-                        stat_train_acc.append([step * batch_size, train_acc])
-                        stat_vd_acc.append([step * batch_size, validation_acc])
-                        stat_vd_loss.append([step * batch_size, validation_loss])
-                        stat_learning_rate.append([step * batch_size, current_learning_rate])
 
-                        self.model_meta_information["stats"]["train_accurecy"] = sm_stat_train_acc
-                        self.model_meta_information["stats"]["validation_accurecy"] = sm_stat_vd_acc
+                        # Save stats
+                        # TODO: Let Tensorflow save these stats for us
+                        stat_data_loss.append([global_step * batch_size, train_loss])
+                        stat_train_acc.append([global_step* batch_size, train_acc])
+                        stat_vd_acc.append([global_step * batch_size, validation_acc])
+                        stat_vd_loss.append([global_step * batch_size, validation_loss])
+                        stat_learning_rate.append([global_step * batch_size, current_learning_rate])
+
+                        self.model_meta_information["stats"]["train_accuracy"] = sm_stat_train_acc
+                        self.model_meta_information["stats"]["validation_accuracy"] = sm_stat_vd_acc
                         self.model_meta_information["stats"]["train_loss"] = stat_data_loss
                         self.model_meta_information["stats"]["validation_loss"] = stat_vd_loss
                         self.model_meta_information["stats"]["learning_rate"] = stat_learning_rate
                         self.model_meta_information["result"] = None if len(sm_stat_vd_acc) == 0 else sm_stat_vd_acc[-1]
                         self.model_meta_information["time_end"] = time.time()
-                        self.model_meta_information["iterations_done"] = (step * batch_size)
+                        self.model_meta_information["iterations_done"] = (global_step * batch_size)
 
                     if step % display_step == 0:
                         steps_count = int(display_step / stat_step)
@@ -581,41 +560,45 @@ class NNModel:
                         sm_stat_train_acc.append([step * batch_size, tr_acc])
                         sm_stat_vd_acc.append([step * batch_size, vd_acc])
 
-                        itr = step * batch_size
-                        if itr >= 1e5:
+                        local_itr = step * batch_size
+                        if local_itr >= 1e5:
                             if vd_acc > highest_validation_acc:
                                 highest_validation_acc = vd_acc
                                 steps_with_no_improvement = 0
                             else:
                                 steps_with_no_improvement += 1
 
-
                         update_graph(stat_data_loss, sm_stat_train_acc, sm_stat_vd_acc, stat_vd_loss, stat_learning_rate)
 
-
-                        print("Iter " + str(step * batch_size) +
+                        print("Local Step " + str(step * batch_size) +
+                              " Global Step " + str(global_step * batch_size) +
                               ", Loss = {:.6f}".format(train_loss) +
                               ", Training Accuracy = {:.3f}".format(tr_acc) +
                               ", Validation Accuracy = {:.3f}".format(vd_acc)
                         )
+
                         # Break if no improvement in the last disp
                         if steps_with_no_improvement > no_improvement_limit:
                             current_learning_rate /= 10
                             print("No Improvement for {0} cycles, scaling down LR to {1}".format(no_improvement_limit, current_learning_rate))
 
                             if current_learning_rate < 1e-10:
-                                print("No Improvement for {0} cycles, terminating".format(no_improvement_limit))
-                                raise KeyboardInterrupt
+                                if voi_queue.global_epoch_count['train'] > 2:
+                                    print("No Improvement for {0} cycles and epoch threshold reached, terminating".format(no_improvement_limit))
+                                    raise KeyboardInterrupt
+                                else:
+                                    print("No Improvement for {0} cycles, changing dataset".format(no_improvement_limit))
+                                    voi_queue.load_next_dataset('train')
+                                    current_learning_rate = learning_rate
+                                    step = 1
 
                 print("Optimization Finished!")
             except KeyboardInterrupt:
                 print("Optimization Terminated!")
             finally:
-                pass
-                #test_batch_x, test_batch_y, roi, rotation = voi_queue.get_all('test')
-                # test_batch_x, test_batch_y, roi, rotation = roi_generator.send(('test', 1000, False, True))
-                #self.evaluate_model(test_batch_x, test_batch_y, roi)
-                #self._save(saver, sess, voi_queue)
+                test_batch_x, test_batch_y, voi, rotation = voi_generator.send(('test', 32, False, True))
+                print(self.evaluate_model(test_batch_x, test_batch_y, voi_queue))
+                self._save(saver, sess)
                 # logger.close()
 
 
