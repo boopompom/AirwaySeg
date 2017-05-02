@@ -48,8 +48,13 @@ class VOIQueue:
             'test': []
         }
 
+        self.global_epoch_count = {
+            'train': 0,
+            'validate': 0,
+            'test': 0
+        }
 
-        self.epoch_count = {
+        self.local_epoch_count = {
             'train': 0,
             'validate': 0,
             'test': 0
@@ -98,7 +103,7 @@ class VOIQueue:
         }
 
         self.worker_thread_count = 4
-        self.max_size = batch_size * 24
+        self.max_size = batch_size * 16
         self.validate_count = validate_count
 
         self.counts = {
@@ -137,11 +142,13 @@ class VOIQueue:
         self.q = None
         self.files = None
         self.available_files = None
-        self.epoch_count = None
+        self.local_epoch_count = None
+        self.global_epoch_count = None
         self.active_files = None
         self.active_images = None
         self.images_backbuffer = None
         self.dataset_times = None
+        self.class_info = None
 
         self.fileset_lock = threading.Lock()
         self.dataset_loader = None
@@ -166,6 +173,16 @@ class VOIQueue:
         pickle.dump(roi_list, open(filename, 'wb'))
 
 
+    def get_class_map(self):
+        map = {}
+        for idx in self.class_info:
+            cls = self.class_info[idx]
+            map[cls['cls_name']] = cls['cls_idx']
+        return map
+
+    def get_number_of_classes(self):
+        for idx in self.class_info:
+            return len(self.class_info[idx]['cls_arr'])
 
     def make_train_test_per_dataset(self):
 
@@ -177,6 +194,10 @@ class VOIQueue:
             if "class_map" not in f:
                 new_files.append(f)
         files = new_files
+
+
+        with open(os.path.relpath("{0}/class_map.json".format(self.input_path))) as class_map_json:
+            self.class_info = json.load(class_map_json)
 
         random.shuffle(files)
 
@@ -196,6 +217,9 @@ class VOIQueue:
         self.load_next_dataset('test')
 
         self.estimate_mean_std()
+
+    def get_dataset_filenames(self, dataset):
+        return self.files[dataset]
 
     def estimate_mean_std(self):
 
@@ -224,12 +248,13 @@ class VOIQueue:
             print(
                 "{0} epochs reached on {1} dataset, "
                 "loading new set ({2} seconds elapsed since last dataset was loaded)"
-                .format(self.epoch_count[mode], mode, time_elapsed)
+                .format(self.local_epoch_count[mode], mode, time_elapsed)
             )
 
             limit = min(self.counts[mode], self.datasets_per_batch)
             if len(self.available_files[mode]) < limit:
                 self.available_files[mode] = self.files[mode][:]
+                self.global_epoch_count[mode] += 1
 
             print("Loading a new {0} dataset".format(mode))
 
@@ -248,7 +273,7 @@ class VOIQueue:
 
                 print("Threads blocked")
 
-                self.epoch_count[mode] = 0
+                self.local_epoch_count[mode] = 0
                 self.dataset_times[mode] = time.time()
                 self.data_templates[mode] = self.data_backbuffer[mode]
                 self.active_images[mode] = self.images_backbuffer[mode]
@@ -281,27 +306,6 @@ class VOIQueue:
             for voi_data in data['vois']:
                 self.data_backbuffer[mode].append(VOI(dataset_id, data['dataset_path'], dicom_path, voi_data, modes=modes))
 
-
-    def get_all(self, dataset):
-
-        selected_dataset = self.data_templates[dataset]
-
-        batch_X, batch_Y, batch_roi, batch_rotation = {'image':[]}, [], [], []
-
-        for roi in selected_dataset:
-            X, Y = roi.get_set(rotation=None)
-            s = list(X.shape)
-            s.append(1)
-            X.shape = s
-            batch_X['image'].append(X)
-            batch_Y.append(Y)
-            batch_roi.append(roi)
-            batch_rotation.append(None)
-
-        batch_X['image'] = np.array(batch_X['image'])
-        batch_Y = np.array(batch_Y)
-        return batch_X, batch_Y, batch_roi, batch_rotation
-
     def get(self):
 
         dataset_type, batch_size, flattened, normalized = yield
@@ -316,8 +320,10 @@ class VOIQueue:
             batch_roi = []
             batch_rotation = []
 
-            if dataset_type == 'train' and self.q[dataset_type].unfinished_tasks < batch_size:
-                print("Training Queue underrun detected!")
+            unfinished = self.q[dataset_type].unfinished_tasks
+            if dataset_type == 'train':
+                if unfinished < batch_size:
+                    print("Training Queue underrun detected (requested {0}, available {1})".format(batch_size, unfinished))
 
             for i in range(batch_size):
                 X, Y, roi, rotation = self.q[dataset_type].get()
@@ -329,8 +335,6 @@ class VOIQueue:
                         batch_X[idx] = []
                     batch_X[idx].append(X[idx])
                 self.q[dataset_type].task_done()
-
-
 
             batch_Y = np.array(batch_Y)
             for idx in batch_X:
@@ -355,7 +359,7 @@ class VOIQueue:
         while not self.shutdown_signal:
             time.sleep(5)
             for mode in self.data_templates:
-                if self.epochs_per_dataset[mode] != -1 and self.epoch_count[mode] > self.epochs_per_dataset[mode]:
+                if self.epochs_per_dataset[mode] != -1 and self.local_epoch_count[mode] > self.epochs_per_dataset[mode]:
                     self.load_next_dataset(mode)
 
     def start(self):
@@ -395,21 +399,28 @@ class VOIQueue:
         while not self.shutdown_signal:
             time.sleep(0.0001)
 
+            # print("Worker: Attempting to resume")
+            # print("Worker: Resuming work")
+
+            self.worker_sema[mode].acquire()
+
+            selected_dataset = self.data_templates[mode]
+            selected_range = rotations[mode]
+            selected_q = self.q[mode]
+
+            rotation_list = None
+            #if random.randint(0, 9) >= 5:
+                # only augment by rotation, 50% of the time, this is faster
+            rotation_list = []
+            for idx in range(0, 3):
+                rotation_list.append(random.choice(selected_range))
+
+            voi = random.choice(selected_dataset)
+            voi_image = self.active_images[mode][voi.image_id]
+
+            cube = None
+            item = None
             try:
-                # print("Worker: Attempting to resume")
-                self.worker_sema[mode].acquire()
-                # print("Worker: Resuming work")
-
-                selected_dataset = self.data_templates[mode]
-                selected_range = rotations[mode]
-                selected_q = self.q[mode]
-
-                rotation_list = []
-                for idx in range(0, 3):
-                    rotation_list.append(random.choice(selected_range))
-
-                voi = random.choice(selected_dataset)
-                voi_image = self.active_images[mode][voi.image_id]
                 cube = voi.get_cube(voi_image, 'global', rotation=rotation_list)
                 cube -= self.mean
                 cube /= self.std
@@ -424,16 +435,19 @@ class VOIQueue:
 
                 X = {
                     'global': cube,
-                    'local' : cube[start_offset:end_offset, start_offset:end_offset, start_offset:end_offset]
+                    'local': cube[start_offset:end_offset, start_offset:end_offset, start_offset:end_offset]
                 }
                 Y = voi.y
 
                 item = (X, Y, voi, rotation_list)
-
-                selected_q.put(item)
-
-                self.epoch_count[mode] += 1 / len(selected_dataset)
-
+            except:
+                continue
             finally:
                 self.worker_sema[mode].release()
+
+
+            selected_q.put(item)
+
+            self.local_epoch_count[mode] += 1 / len(selected_dataset)
+
 
