@@ -20,7 +20,7 @@ class FullyConvNetwork:
         X_global = tf.placeholder(tf.float32, [None, 53, 53, 53, 1], name="input_global")
         X_local = tf.placeholder(tf.float32, [None, 33, 33, 33, 1], name="input_local")
 
-        # model = self.conv_unit(X_local, injected_input=self.conv_unit(X_global, class_count=num_classes), class_count=num_classes)
+        # model = self.conv_unit(X_local, injected_input=self.conv_unit(X_global, class_count=self.num_classes), class_count=self.num_classes)
         model = self.conv_unit(X_local, class_count=self.num_classes)
         return {
             "X": {
@@ -63,8 +63,7 @@ class FullyConvNetwork:
 
         output = None
         with tf.variable_scope(name):
-            w = tf.get_variable("Weights", dtype=tf.float32, shape=w_shape,
-                                initializer=tf.contrib.layers.xavier_initializer())
+            w = tf.get_variable("Weights", dtype=tf.float32, shape=w_shape,initializer=tf.contrib.layers.xavier_initializer())
             b = tf.get_variable("Biases", dtype=tf.float32, shape=b_shape, initializer=tf.constant_initializer(0.0))
             output = tf.nn.conv3d(input_tensor, w, strides=stride_list, padding='VALID', name="OpConv")
             output = tf.nn.bias_add(output, b, name="OpBias")
@@ -129,15 +128,19 @@ class FullyConvNetwork:
             concat_list = [path_1, path_2]
             if injected_input is not None:
                 concat_list.append(injected_input)
+                print(path_1.shape)
+                print(path_2.shape)
+                print(injected_input)
             output = tf.concat(concat_list, 4)
 
-            print(path_1)
-            print(path_2)
-            print(output)
+            #print(path_1)
+            #print(path_2)
+            #print(output)
 
             # Conv 21x21
             output = self.conv(output, filter_size=21, filter_stride=1, filter_count=class_count, name="OpConv3")
-            output = self.softmax(output, 4, name="OpSoftmax0")
+            # output = tf.squeeze(output)
+            # output = self.softmax(output, 1, name="OpSoftmax0")
 
             print(output)
 

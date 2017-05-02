@@ -10,6 +10,8 @@ import threading
 import json
 import pprint
 
+voi_queue = VOIQueue("./Output/32_class", random_seed=1992, batch_size=32)
+exit()
 
 roi_q = VOIQueue('./Output/', random_seed=1992)
 

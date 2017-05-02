@@ -49,12 +49,12 @@ def build_set(is_binary):
                 segs.extend(['-o', os.path.abspath('./Output/2_class/')])
             else:
                 segs.extend(['-v', '30'])
-                segs.extend(['-o', os.path.abspath('./Output/33_class/')])
+                segs.extend(['-o', os.path.abspath('./Output/32_class/')])
             segs.extend(['-r', '1992'])
             segs.extend(['-t', str(batches_per_exe)])
             runner.enqueue(batches_per_exe, segs)
 
         runner.start()
 
+# build_set(False)
 build_set(True)
-build_set(False)

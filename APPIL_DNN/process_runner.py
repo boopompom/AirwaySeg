@@ -41,7 +41,7 @@ class ProcessRunner:
 
     def enqueue(self, file_count, params):
         total_files = self.std_printer.get_variable('total_files')
-        self.std_printer.set_variable('total_files', total_files + file_count)
+        self.std_printer.set_variable('total_files', file_count + total_files)
         self.q.put((file_count, params))
 
     def perform_task(self):
@@ -85,7 +85,7 @@ class ProcessRunner:
             self.logger.handlers[0].flush()
 
             with self.std_printer as vars:
-                vars['files_done'] += 1
+                vars['files_done'] += file_count
                 if vars['total_files'] != 0:
                     vars['files_done_pct'] = (vars['files_done'] / vars['total_files']) * 100
                 else :
@@ -103,8 +103,6 @@ class ProcessRunner:
             t.daemon = True
             t.start()
             self.threads.append(t)
-
-
 
         try:
             while True:

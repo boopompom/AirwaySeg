@@ -16,7 +16,8 @@ class VOI:
         if modes is None:
             raise ValueError("VOI modes dict is required, example {'local': [25, 25, 25]}")
 
-        self.center = np.array(json['idx'], dtype=np.int16)
+        self.center = np.array(json['int_idx'], dtype=np.int16)
+        self.center_labelmap = np.array(json['lbl_idx'], dtype=np.int16)
         self.image_id = image_id
         self.dicom_path = dicom_path
         self.dataset_path = dataset_path
@@ -58,11 +59,11 @@ class VOI:
         new_start = np.int16(new_center - (size/2))
         new_end = np.int16(new_center + (size/2))
 
-        return cube[
+        return np.float32(cube[
            new_start[0]:new_end[0],
            new_start[1]:new_end[1],
            new_start[2]:new_end[2]
-        ]
+        ])
 
     def get_im_cube_center(self, im, mode):
         size = self.modes[mode]
@@ -84,18 +85,19 @@ class VOI:
             rotation = None
 
         if self.cubes[mode] is None:
-            sz = self.cubes_size[mode]
-            st = self.cubes_start[mode]
 
+            sz = self.cubes_size[mode]
             voi_size = [int(sz[0]), int(sz[1]), int(sz[2])]
+
+            st = self.cubes_start[mode]
             voi_start = [int(st[0]), int(st[1]), int(st[2])]
+
             try:
                 self.cubes[mode] = sitk.RegionOfInterest(image, voi_size, voi_start)
                 self.cubes_nd[mode] = sitk.GetArrayFromImage(self.cubes[mode])
             except:
+                print(voi_start, voi_size, image.GetSize())
                 return None
-                #print("ERR")
-
 
         cube = self.cubes[mode]
         cube_nd = self.cubes_nd[mode]

@@ -518,7 +518,7 @@ class NNModel:
         writer.close()
 
         stat_step = 20
-        display_step = 100
+        display_step = 2000
         train_loss = 0
         step = 1
         current_learning_rate = learning_rate

@@ -47,7 +47,7 @@ class BasicStdout:
 
         def update(self, variables={}):
             full_dict = {**variables, **self.variables}
-            print(full_dict)
+            # print(full_dict)
             self.lock.acquire()
             sys.stdout.write(self.format.format(**full_dict))
             sys.stdout.flush()

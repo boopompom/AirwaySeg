@@ -30,7 +30,7 @@ void FullImageProcessor::saveIndices() {
 	//TODO: Store indices and leave VOI extraction and rotation to the VOI Queue
 	writeJSON();
 
-	IntensityImageType::SizeType imageSize = mIntensityImage->GetLargestPossibleRegion().GetSize();
+	IntensityImageType::SizeType imageSize = mLabelImage->GetLargestPossibleRegion().GetSize();
 
 	unsigned long offset_X = 0;
 	unsigned long offset_Y = 0;
@@ -74,8 +74,12 @@ void FullImageProcessor::saveIndices() {
 			}
 			IntensityImageType::IndexType center = *idxIt;
 			vois << "\t\t{" << endl;
-			vois << "\t\t\t\"idx\": [" << center[0] << ", "  << center[1] << ", " << center[2] << "]," << endl;
+			vois << "\t\t\t\"lbl_idx\": [" << center[0] << ", " << center[1] << ", " << center[2] << "]," << endl;
+			vois << "\t\t\t\"int_idx\": [" << center[0] << ", " << center[1] << ", " << imageSize[2] - center[2] << "]," << endl;
 			vois << "\t\t\t\"cls\": " << label << "," << endl;
+			if (!mIsBinary && label != 0 && label != 500) {
+				vois << "\t\t\t\"org_cls\": " << mRepLabelMap[labelText] << "," << endl;
+			}
 			vois << "\t\t\t\"cls_name\": \"" << labelText << "\"," << endl;
 			vois << "\t\t\t\"cls_arr\": [";
 
@@ -383,7 +387,11 @@ void FullImageProcessor::init() {
         LabelPixelType label = it.Get();
 		LabelIndexType idx = it.GetIndex();
 		
-		if (idx[0] < mOffsetFromCenter || idx[1] < mOffsetFromCenter || idx[2] < mOffsetFromCenter) {
+		if (idx[0] < mDiagonal || idx[1] < mDiagonal || idx[2] < mDiagonal) {
+			continue;
+		}
+
+		if (idx[0] + mDiagonal > dim[0] || idx[1] + mDiagonal > dim[1] || idx[2] + mDiagonal > dim[2]) {
 			continue;
 		}
 
